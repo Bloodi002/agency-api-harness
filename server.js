@@ -54,13 +54,24 @@ const sseClients = new Set();
 const agencyOf = (p) =>
   (p && (p.agencyId || p.tblAgencyId || (p.data && (p.data.agencyId || p.data.tblAgencyId)))) || null;
 
+// Opaque feed key -> agencyId. Issued ONLY on a successful /token, from the gateway's own token, so a
+// browser cannot receive an agency's webhooks without having signed in with that agency's client secret.
+const feedSessions = new Map();
+const agencyFromJwt = (token) => {
+  try {
+    const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(Buffer.from(payload, 'base64').toString('utf8')).agencyId || null;
+  } catch { return null; }
+};
+
 const pushEvent = (entry) => {
   received.unshift(entry);
   received.splice(200);
   const frame = `data: ${JSON.stringify(entry)}\n\n`;
   for (const res of sseClients) {
-    // One shared harness serves several agencies; a browser signed in as one only sees that one's deliveries.
-    if (res._agencyId && entry.agencyId && res._agencyId !== entry.agencyId) continue;
+    // Strict: a delivery reaches only the browser that signed in as that exact agency. No key, or a
+    // different agency's key, or an unattributable delivery -> it is not sent.
+    if (!res._agencyId || entry.agencyId !== res._agencyId) continue;
     try { res.write(frame); } catch { sseClients.delete(res); }
   }
 };
@@ -192,8 +203,24 @@ const server = http.createServer(async (req, res) => {
       headers: { 'content-type': 'application/x-www-form-urlencoded', 'content-length': Buffer.byteLength(form) },
       body: Buffer.from(form),
     });
+    // On success, bind a random feed key to the agency named in the gateway's token (trustworthy — it
+    // came straight from the gateway, not the browser). The browser presents this key to receive only
+    // its own agency's deliveries; nothing ties the feed to a browser-supplied id it could spoof.
+    let body = out.body;
+    if (out.status >= 200 && out.status < 300) {
+      try {
+        const parsed = JSON.parse(out.body.toString('utf8'));
+        const agencyId = agencyFromJwt(parsed.access_token);
+        if (agencyId) {
+          const key = crypto.randomBytes(24).toString('hex');
+          feedSessions.set(key, agencyId);
+          parsed.feedKey = key;
+          body = Buffer.from(JSON.stringify(parsed));
+        }
+      } catch { /* not JSON we can augment; forward it unchanged */ }
+    }
     res.writeHead(out.status, { 'content-type': out.headers['content-type'] || 'application/json', 'access-control-allow-origin': '*' });
-    res.end(out.body);
+    res.end(body);
     return;
   }
 
@@ -206,12 +233,13 @@ const server = http.createServer(async (req, res) => {
 
   // The live feed of received deliveries.
   if (req.method === 'GET' && url === '/received') {
-    const aid = queryParam(req, 'agencyId');
-    return json(res, 200, aid ? received.filter((e) => !e.agencyId || e.agencyId === aid) : received);
+    // Only this agency's history, and only for a browser holding a valid feed key.
+    const aid = feedSessions.get(queryParam(req, 'key') || '') || null;
+    return json(res, 200, aid ? received.filter((e) => e.agencyId === aid) : []);
   }
   if (req.method === 'POST' && url === '/reset') { received.length = 0; seenEventIds.clear(); return json(res, 200, { cleared: true }); }
   if (req.method === 'GET' && url === '/events') {
-    res._agencyId = queryParam(req, 'agencyId');
+    res._agencyId = feedSessions.get(queryParam(req, 'key') || '') || null;
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', 'access-control-allow-origin': '*' });
     res.write(': connected\n\n');
     sseClients.add(res);

@@ -142,16 +142,8 @@ const $ = (s) => document.querySelector(s);
 let fullSpec = null;
 let granted = [];        // scopes the current token holds
 window.__token = null;
-let myAgencyId = null;    // the agency the current token belongs to; scopes the feed to it
+let feedKey = null;       // server-issued key that unlocks only this agency's deliveries
 let feedSource = null;    // the live EventSource, reopened per agency on sign-in
-
-// The agency id rides in the token; reading it lets the shared harness show only this agency's deliveries.
-function agencyFromToken(token) {
-  try {
-    const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    return JSON.parse(atob(payload)).agencyId || null;
-  } catch { return null; }
-}
 
 // ── config + webhook URL ─────────────────────────────────────────────────────
 async function loadConfig() {
@@ -229,8 +221,9 @@ async function signIn() {
     }
     window.__token = j.access_token;
     granted = (j.scope || '').split(' ').filter(Boolean);
-    // Re-scope the feed to this agency so a shared harness stops showing other agencies' deliveries.
-    myAgencyId = agencyFromToken(j.access_token);
+    // The server issues this key bound to our agency; the feed rejects anything else, so a shared
+    // harness only ever sends us our own deliveries.
+    feedKey = j.feedKey || null;
     startFeed();
     $('#authStatus').textContent = 'Signed in — token valid for ' + (j.expires_in || 3600) + 's.';
     $('#authStatus').className = 'status ok';
@@ -273,7 +266,7 @@ const esc = (v) => String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<'
 function startFeed() {
   // Reopened on sign-in so the agency filter takes effect; old stream and stale rows are dropped first.
   if (feedSource) { feedSource.close(); feedSource = null; }
-  const q = myAgencyId ? '?agencyId=' + encodeURIComponent(myAgencyId) : '';
+  const q = feedKey ? '?key=' + encodeURIComponent(feedKey) : '';
   $('#feed').innerHTML = '<div class="empty">Waiting for deliveries…</div>';
   fetch('/received' + q).then((r) => r.json()).then((rows) => rows.slice(0, 30).reverse().forEach(renderEvent)).catch(() => {});
   const es = new EventSource('/events' + q);
