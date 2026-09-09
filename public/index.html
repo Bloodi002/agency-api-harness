@@ -203,10 +203,15 @@ async function signIn() {
   $('#authStatus').className = 'status';
   try {
     const r = await fetch('/token', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ clientId, clientSecret }) });
-    const j = await r.json();
+    // The gateway can answer with an empty or non-JSON body (e.g. a bare 401 from
+    // auth middleware). Parse defensively so the real status still reaches the user.
+    const raw = await r.text();
+    let j = {};
+    try { j = raw ? JSON.parse(raw) : {}; } catch { j = {}; }
     if (!r.ok || !j.access_token) {
       window.__token = null; granted = [];
-      $('#authStatus').textContent = j.error_description || j.error || ('Sign-in failed (HTTP ' + r.status + ')');
+      const detail = j.error_description || j.error || (raw.trim() ? raw.trim().slice(0, 200) : 'empty response from the gateway');
+      $('#authStatus').textContent = 'Sign-in failed (HTTP ' + r.status + ') — ' + detail;
       $('#authStatus').className = 'status err';
       $('#scopePill').textContent = 'not signed in';
       paintScopes([]); renderSwagger();
