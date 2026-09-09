@@ -233,7 +233,8 @@ async function signIn() {
 }
 
 function paintScopes(scopes) {
-  const all = ['profile.read','profile.write','candidates.read','candidates.write','skills.read','skills.write','shifts.read','shifts.write','placements.read','compliance.read','compliance.write','webhooks.read','webhooks.write'];
+  // Skills endpoints are gated by profile.read/profile.write server-side; there is no skills.* scope, so no chip for it.
+  const all = ['profile.read','profile.write','candidates.read','candidates.write','shifts.read','shifts.write','placements.read','compliance.read','compliance.write','webhooks.read','webhooks.write'];
   $('#scopeChips').innerHTML = all
     .map((s) => `<span class="chip ${scopes.includes(s) ? '' : 'off'}">${s}</span>`)
     .join('');
