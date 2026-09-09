@@ -1,0 +1,18 @@
+# One-click Render deploy. Push this folder to a Git repo, then in Render:
+# New + → Blueprint → pick the repo. Render reads this file and creates the service.
+services:
+  - type: web
+    name: agency-api-harness
+    runtime: node
+    plan: free
+    buildCommand: ""          # zero-dependency; nothing to build
+    startCommand: node server.js
+    envVars:
+      - key: GATEWAY_BASE
+        # The public gateway for the environment you are demoing (no trailing slash).
+        value: https://apidev.rostered.ai
+      - key: API_PREFIX
+        value: /partners
+      # Set the webhook signing secret here, or in the UI at runtime.
+      - key: WEBHOOK_SECRET
+        sync: false

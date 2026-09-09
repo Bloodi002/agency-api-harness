@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RosteredAI Agency API Harness</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.17.14/swagger-ui.min.css">
+<style>
+  :root{ --brand:#01ADEF; --brand-dark:#0B7FB0; --ink:#16202B; --muted:#586170; --line:#E4E8EC; --ok:#1E8E5A; --bad:#C0392B; --warn:#B5791F; }
+  *{box-sizing:border-box}
+  body{margin:0; background:#F5F7FA; font-family:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,sans-serif; color:var(--ink)}
+  code,.mono{font-family:"IBM Plex Mono",monospace}
+
+  .masthead{background:linear-gradient(180deg,#0A2A38,#0E1723); color:#fff; padding:18px 24px}
+  .masthead .inner{max-width:1200px; margin:0 auto; display:flex; align-items:center; gap:16px; flex-wrap:wrap}
+  .logo{display:flex; align-items:center; gap:10px}
+  .logo .dot{width:30px; height:30px; border-radius:8px; background:var(--brand); display:flex; align-items:center; justify-content:center; font-weight:700}
+  .logo b{font-size:1.1rem; letter-spacing:-.01em}
+  .masthead .title{font-size:.88rem; color:#B9C6D2}
+  .pill{font-family:"IBM Plex Mono",monospace; font-size:.7rem; font-weight:600; padding:3px 10px; border-radius:999px; background:#0A3A51; color:#7FD1E8; border:1px solid rgba(1,173,239,.4)}
+  .masthead .gw{margin-left:auto; font-size:.78rem; color:#9FB2C0}
+  .masthead .gw b{color:#DDE6EE; font-weight:600}
+
+  .wrap{max-width:1200px; margin:0 auto; padding:18px 20px 60px}
+  .grid{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:18px}
+  @media(max-width:860px){.grid{grid-template-columns:1fr}}
+  .card{background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px 18px}
+  .card h2{font-size:1.02rem; margin:0 0 4px}
+  .card p.sub{margin:0 0 12px; color:var(--muted); font-size:.85rem}
+
+  label{display:block; font-size:.78rem; color:var(--muted); margin:10px 0 4px; font-weight:500}
+  input[type=text],input[type=password]{width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px; font-size:.9rem; font-family:"IBM Plex Mono",monospace}
+  .row{display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end}
+  .row > div{flex:1; min-width:180px}
+  button.act{background:var(--brand); color:#fff; border:none; border-radius:8px; padding:10px 16px; font-weight:600; font-size:.88rem; cursor:pointer}
+  button.act:hover{background:var(--brand-dark)}
+  button.ghost{background:#fff; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:9px 14px; font-size:.84rem; cursor:pointer}
+  .status{font-size:.82rem; margin-top:10px}
+  .status.err{color:var(--bad)} .status.ok{color:var(--ok)}
+
+  .chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:10px}
+  .chip{font-family:"IBM Plex Mono",monospace; font-size:.72rem; padding:3px 9px; border-radius:999px; background:#E6F3EC; color:var(--ok); border:1px solid rgba(30,142,90,.25)}
+  .chip.off{background:#F1F3F5; color:#8A94A3; border-color:var(--line)}
+
+  .hookurl{display:flex; gap:8px; align-items:center; margin-top:6px}
+  .hookurl code{flex:1; background:#EEF3F6; padding:8px 10px; border-radius:8px; font-size:.8rem; overflow:auto; white-space:nowrap}
+  .feed{margin-top:12px; max-height:260px; overflow:auto; display:flex; flex-direction:column; gap:8px}
+  .ev{border:1px solid var(--line); border-left:3px solid var(--ok); border-radius:8px; padding:8px 10px; background:#FBFEFC}
+  .ev.bad{border-left-color:var(--bad); background:#FFFBFB}
+  .ev .t{display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:.82rem}
+  .ev .t strong{font-size:.86rem}
+  .tag{font-family:"IBM Plex Mono",monospace; font-size:.68rem; padding:2px 7px; border-radius:999px; background:#EEF3F6; color:var(--muted)}
+  .tag.ok{background:#E6F3EC; color:var(--ok)} .tag.bad{background:#F7E6E3; color:var(--bad)} .tag.warn{background:#F7EEDD; color:var(--warn)}
+  .ev pre{margin:6px 0 0; font-size:.74rem; background:#0E1723; color:#CFE3EE; padding:8px; border-radius:6px; overflow:auto; max-height:160px}
+  .empty{color:#8A94A3; font-size:.85rem; padding:8px 0}
+  .conn{display:inline-flex; align-items:center; gap:6px; font-size:.78rem; color:var(--muted)}
+  .conn .d{width:8px; height:8px; border-radius:50%; background:#C7CDD4}
+  .conn.on .d{background:var(--ok)}
+
+  .explorer-head{display:flex; align-items:center; gap:12px; margin:8px 0 4px}
+  .explorer-head h2{margin:0; font-size:1.05rem}
+  .explorer-head .note{color:var(--muted); font-size:.82rem}
+  .toggle{margin-left:auto; display:flex; align-items:center; gap:7px; font-size:.82rem; color:var(--muted); cursor:pointer; user-select:none}
+  .toggle input{width:auto}
+
+  #swagger-ui{max-width:1200px; margin:6px auto 0}
+  .swagger-ui .topbar,.swagger-ui .info__contact,.swagger-ui .scheme-container{display:none}
+  .swagger-ui{font-family:"IBM Plex Sans",system-ui,sans-serif}
+  .swagger-ui .info{margin:14px 0}
+  .swagger-ui .opblock.opblock-post .opblock-summary-method{background:var(--brand-dark)}
+  .swagger-ui .opblock.opblock-post{border-color:rgba(11,127,176,.4)}
+  .swagger-ui .btn.execute{background:var(--brand); border-color:var(--brand)}
+  .swagger-ui code,.swagger-ui .microlight{font-family:"IBM Plex Mono",monospace}
+</style>
+</head>
+<body>
+  <div class="masthead">
+    <div class="inner">
+      <div class="logo"><span class="dot">R</span><b>RosteredAI</b></div>
+      <span class="title">Agency API Harness</span>
+      <span class="pill" id="scopePill">not signed in</span>
+      <div class="gw">Gateway <b id="gwLabel">…</b></div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="grid">
+      <!-- Connect -->
+      <div class="card">
+        <h2>1 · Connect</h2>
+        <p class="sub">Paste the <code>client_id</code> / <code>client_secret</code> from <b>Settings → API &amp; Credentials</b>. The harness exchanges them for a scoped token and unlocks the APIs that token is allowed to call.</p>
+        <div class="row">
+          <div>
+            <label>Client ID</label>
+            <input id="cid" type="text" placeholder="cid_…" autocomplete="off">
+          </div>
+          <div>
+            <label>Client Secret</label>
+            <input id="csec" type="password" placeholder="cs_…" autocomplete="off">
+          </div>
+        </div>
+        <div style="margin-top:12px; display:flex; gap:10px; align-items:center">
+          <button class="act" id="signIn">Get token</button>
+          <span class="status" id="authStatus">Enter your credentials and sign in.</span>
+        </div>
+        <div class="chips" id="scopeChips"></div>
+      </div>
+
+      <!-- Webhooks -->
+      <div class="card">
+        <h2>2 · Webhooks <span class="conn" id="conn" style="margin-left:8px"><span class="d"></span>connecting…</span></h2>
+        <p class="sub">Register this URL as your webhook endpoint in the portal, set the same signing secret here, then send a test — deliveries appear live below, signature-checked.</p>
+        <label>Your delivery URL (register this in the portal)</label>
+        <div class="hookurl"><code id="hookUrl">…/webhooks/rostered</code><button class="ghost" id="copyHook">Copy</button></div>
+        <div class="row" style="margin-top:6px">
+          <div>
+            <label>Signing secret (whsec_…)</label>
+            <input id="whsec" type="password" placeholder="whsec_…" autocomplete="off">
+          </div>
+          <button class="ghost" id="setSecret">Set secret</button>
+          <button class="ghost" id="clearFeed">Clear</button>
+        </div>
+        <div class="feed" id="feed"><div class="empty">Waiting for deliveries…</div></div>
+      </div>
+    </div>
+
+    <div class="explorer-head">
+      <h2>3 · API explorer</h2>
+      <span class="note" id="explorerNote">Sign in to enable “Try it out”.</span>
+      <label class="toggle"><input type="checkbox" id="onlyAllowed" checked> Show only my allowed APIs</label>
+    </div>
+    <div id="swagger-ui"></div>
+  </div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.17.14/swagger-ui-bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.17.14/swagger-ui-standalone-preset.min.js"></script>
+<script>
+const $ = (s) => document.querySelector(s);
+let fullSpec = null;
+let granted = [];        // scopes the current token holds
+window.__token = null;
+
+// ── config + webhook URL ─────────────────────────────────────────────────────
+async function loadConfig() {
+  try {
+    const cfg = await fetch('/config').then((r) => r.json());
+    $('#gwLabel').textContent = (cfg.gatewayBase || '') + (cfg.apiPrefix || '');
+  } catch { $('#gwLabel').textContent = 'unknown'; }
+  $('#hookUrl').textContent = location.origin + '/webhooks/rostered';
+}
+
+// ── the API scope required by an operation ───────────────────────────────────
+function opScopes(op) {
+  const sec = op && op.security;
+  if (!Array.isArray(sec)) return [];
+  const out = [];
+  for (const req of sec) for (const k of Object.keys(req || {})) out.push(...(req[k] || []));
+  return out;
+}
+
+// ── build the spec Swagger renders: all, or only the token's allowed operations ─
+function specFor(showOnlyAllowed) {
+  const spec = JSON.parse(JSON.stringify(fullSpec));
+  spec.servers = [{ url: location.origin + '/api' }];   // every call routes through the harness proxy
+  if (showOnlyAllowed && granted.length) {
+    const paths = {};
+    for (const [p, item] of Object.entries(spec.paths || {})) {
+      const op = item.post || item.get || {};
+      const needs = opScopes(op);
+      // No declared scope (e.g. the token endpoint) stays; otherwise every required scope must be held.
+      if (!needs.length || needs.every((s) => granted.includes(s))) paths[p] = item;
+    }
+    spec.paths = paths;
+  }
+  return spec;
+}
+
+function renderSwagger() {
+  const spec = specFor($('#onlyAllowed').checked);
+  window.ui = SwaggerUIBundle({
+    spec,
+    dom_id: '#swagger-ui',
+    presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+    layout: 'BaseLayout',
+    docExpansion: 'none',
+    defaultModelsExpandDepth: -1,
+    tryItOutEnabled: Boolean(window.__token),
+    requestInterceptor: (req) => {
+      if (window.__token) req.headers['Authorization'] = 'Bearer ' + window.__token;
+      return req;
+    },
+  });
+}
+
+// ── sign in ──────────────────────────────────────────────────────────────────
+async function signIn() {
+  const clientId = $('#cid').value.trim();
+  const clientSecret = $('#csec').value.trim();
+  $('#authStatus').textContent = 'Signing in…';
+  $('#authStatus').className = 'status';
+  try {
+    const r = await fetch('/token', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ clientId, clientSecret }) });
+    const j = await r.json();
+    if (!r.ok || !j.access_token) {
+      window.__token = null; granted = [];
+      $('#authStatus').textContent = j.error_description || j.error || ('Sign-in failed (HTTP ' + r.status + ')');
+      $('#authStatus').className = 'status err';
+      $('#scopePill').textContent = 'not signed in';
+      paintScopes([]); renderSwagger();
+      return;
+    }
+    window.__token = j.access_token;
+    granted = (j.scope || '').split(' ').filter(Boolean);
+    $('#authStatus').textContent = 'Signed in — token valid for ' + (j.expires_in || 3600) + 's.';
+    $('#authStatus').className = 'status ok';
+    $('#scopePill').textContent = granted.length + ' scope' + (granted.length === 1 ? '' : 's');
+    $('#explorerNote').textContent = 'Try it out is enabled — every call goes out as your agency.';
+    paintScopes(granted);
+    localStorage.setItem('cid', clientId);
+    renderSwagger();
+  } catch (e) {
+    $('#authStatus').textContent = e.message;
+    $('#authStatus').className = 'status err';
+  }
+}
+
+function paintScopes(scopes) {
+  const all = ['profile.read','profile.write','candidates.read','candidates.write','skills.read','skills.write','shifts.read','shifts.write','placements.read','compliance.read','compliance.write','webhooks.read','webhooks.write'];
+  $('#scopeChips').innerHTML = all
+    .map((s) => `<span class="chip ${scopes.includes(s) ? '' : 'off'}">${s}</span>`)
+    .join('');
+}
+
+// ── webhook feed ─────────────────────────────────────────────────────────────
+function renderEvent(e) {
+  const feed = $('#feed');
+  const empty = feed.querySelector('.empty');
+  if (empty) feed.innerHTML = '';
+  const d = document.createElement('div');
+  d.className = 'ev' + (e.valid ? '' : ' bad');
+  d.innerHTML =
+    `<div class="t"><strong>${esc(e.eventType)}</strong>` +
+    `<span class="tag ${e.valid ? 'ok' : 'bad'}">${e.valid ? 'signature VALID' : 'REJECTED — ' + esc(e.reason || '')}</span>` +
+    (e.duplicate ? '<span class="tag warn">duplicate</span>' : '') +
+    `<span class="tag">${esc((e.at || '').slice(11, 19))}</span></div>` +
+    (e.data ? `<pre>${esc(JSON.stringify(e.data, null, 2))}</pre>` : '');
+  feed.prepend(d);
+}
+const esc = (v) => String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+function startFeed() {
+  fetch('/received').then((r) => r.json()).then((rows) => rows.slice(0, 30).reverse().forEach(renderEvent)).catch(() => {});
+  const es = new EventSource('/events');
+  es.onopen = () => { $('#conn').className = 'conn on'; $('#conn').innerHTML = '<span class="d"></span>live'; };
+  es.onerror = () => { $('#conn').className = 'conn'; $('#conn').innerHTML = '<span class="d"></span>disconnected'; };
+  es.onmessage = (m) => { try { renderEvent(JSON.parse(m.data)); } catch {} };
+}
+
+// ── wire up ──────────────────────────────────────────────────────────────────
+$('#signIn').addEventListener('click', signIn);
+$('#onlyAllowed').addEventListener('change', renderSwagger);
+$('#copyHook').addEventListener('click', () => navigator.clipboard.writeText($('#hookUrl').textContent));
+$('#clearFeed').addEventListener('click', () => { fetch('/reset', { method: 'POST' }); $('#feed').innerHTML = '<div class="empty">Cleared.</div>'; });
+$('#setSecret').addEventListener('click', async () => {
+  await fetch('/set-secret', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ secret: $('#whsec').value.trim() }) });
+  $('#whsec').placeholder = 'secret set ✓';
+  $('#whsec').value = '';
+});
+const savedCid = localStorage.getItem('cid'); if (savedCid) $('#cid').value = savedCid;
+
+(async () => {
+  await loadConfig();
+  paintScopes([]);
+  fullSpec = await fetch('/agency-partner-openapi.json').then((r) => r.json());
+  renderSwagger();
+  startFeed();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "agency-api-harness",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hosted Swagger/Postman + webhook receiver for the RosteredAI Agency Partner API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
