@@ -32,6 +32,16 @@ GATEWAY_BASE = os.environ.get("GATEWAY_BASE", "http://202.131.115.228:8081/api.r
 API_PREFIX = os.environ.get("API_PREFIX", "/partners")
 TOLERANCE = int(os.environ.get("SIG_TOLERANCE", "300"))
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
+
+# The endpoint no longer shows a separate signing secret; the webhook signing key is derived from
+# the API client secret, so a delivery is verified with the same client_secret used to sign in.
+WEBHOOK_DERIVE_LABEL = "rostered.agency.webhook.v1"
+
+
+def derive_webhook_secret(client_secret):
+    if not client_secret:
+        return ""
+    return "whsec_" + hmac.new(client_secret.encode(), WEBHOOK_DERIVE_LABEL.encode(), hashlib.sha256).hexdigest()
 PUBLIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "public")
 
 # ── shared state ──────────────────────────────────────────────────────────────
@@ -215,6 +225,8 @@ class Handler(BaseHTTPRequestHandler):
                 creds = json.loads(raw)
             except ValueError:
                 creds = {}
+            if creds.get("clientSecret"):
+                WEBHOOK_SECRET = derive_webhook_secret(creds.get("clientSecret"))
             form = urllib.parse.urlencode({
                 "grant_type": "client_credentials",
                 "client_id": creds.get("clientId", ""),

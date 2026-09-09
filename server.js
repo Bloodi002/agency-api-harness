@@ -26,6 +26,12 @@ const API_PREFIX = process.env.API_PREFIX ?? '/partners';
 const TOLERANCE = Number(process.env.SIG_TOLERANCE || 300);
 let WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || '';
 
+// The endpoint no longer shows a separate signing secret; the webhook signing key is derived from
+// the API client secret, so a delivery is verified with the same client_secret used to sign in.
+const WEBHOOK_DERIVE_LABEL = 'rostered.agency.webhook.v1';
+const deriveWebhookSecret = (clientSecret) =>
+  clientSecret ? 'whsec_' + crypto.createHmac('sha256', clientSecret).update(WEBHOOK_DERIVE_LABEL).digest('hex') : '';
+
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 // ── received webhook feed ────────────────────────────────────────────────────
@@ -149,6 +155,8 @@ const server = http.createServer(async (req, res) => {
     const raw = (await readBody(req)).toString('utf8');
     let creds = {};
     try { creds = JSON.parse(raw); } catch { creds = {}; }
+    // Derive the webhook signing key from the client secret so verification needs no separate secret.
+    if (creds.clientSecret) WEBHOOK_SECRET = deriveWebhookSecret(creds.clientSecret);
     const form = new URLSearchParams({ grant_type: 'client_credentials', client_id: creds.clientId || '', client_secret: creds.clientSecret || '' }).toString();
     const out = await forward({
       method: 'POST',

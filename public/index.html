@@ -112,13 +112,13 @@
       <!-- Webhooks -->
       <div class="card">
         <h2>2 · Webhooks <span class="conn" id="conn" style="margin-left:8px"><span class="d"></span>connecting…</span></h2>
-        <p class="sub">Register this URL as your webhook endpoint in the portal, set the same signing secret here, then send a test — deliveries appear live below, signature-checked.</p>
+        <p class="sub">Register this URL as your webhook endpoint in the portal, then send a test — deliveries appear live below, verified with the signing key derived from your client secret (no separate secret needed once you have a token).</p>
         <label>Your delivery URL (register this in the portal)</label>
         <div class="hookurl"><code id="hookUrl">…/webhooks/rostered</code><button class="ghost" id="copyHook">Copy</button></div>
         <div class="row" style="margin-top:6px">
           <div>
-            <label>Signing secret (whsec_…)</label>
-            <input id="whsec" type="password" placeholder="whsec_…" autocomplete="off">
+            <label>Signing secret (optional override)</label>
+            <input id="whsec" type="password" placeholder="auto-derived from your client secret" autocomplete="off">
           </div>
           <button class="ghost" id="setSecret">Set secret</button>
           <button class="ghost" id="clearFeed">Clear</button>
