@@ -33,6 +33,22 @@ API_PREFIX = os.environ.get("API_PREFIX", "/partners")
 TOLERANCE = int(os.environ.get("SIG_TOLERANCE", "300"))
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
 
+# Every agency secret this harness has seen. One shared instance can be driven by several testers,
+# each signing in as a different agency against the same URL, so a delivery is valid if ANY known
+# secret signs it — not just the most recent sign-in's.
+WEBHOOK_SECRETS = set()
+if WEBHOOK_SECRET:
+    WEBHOOK_SECRETS.add(WEBHOOK_SECRET)
+
+
+def remember_secret(secret):
+    global WEBHOOK_SECRET
+    if not secret:
+        return
+    WEBHOOK_SECRET = secret
+    WEBHOOK_SECRETS.add(secret)
+
+
 # The endpoint no longer shows a separate signing secret; the webhook signing key is derived from
 # the API client secret, so a delivery is verified with the same client_secret used to sign in.
 WEBHOOK_DERIVE_LABEL = "rostered.agency.webhook.v1"
@@ -76,7 +92,8 @@ def parse_signature(header):
 
 
 def verify(raw_body, header):
-    if not WEBHOOK_SECRET:
+    secrets = list(WEBHOOK_SECRETS) if WEBHOOK_SECRETS else ([WEBHOOK_SECRET] if WEBHOOK_SECRET else [])
+    if not secrets:
         return False, "no secret configured on the harness"
     parsed = parse_signature(header)
     if not parsed:
@@ -88,11 +105,14 @@ def verify(raw_body, header):
         return False, "unparseable timestamp"
     if age > TOLERANCE:
         return False, f"timestamp outside {TOLERANCE}s tolerance"
-    expected = hmac.new(
-        WEBHOOK_SECRET.encode(), f"{timestamp}.{raw_body}".encode(), hashlib.sha256
-    ).hexdigest()
-    ok = hmac.compare_digest(expected, signature)
-    return ok, (None if ok else "signature mismatch")
+    # Valid if any agency this harness has signed in for produced the signature.
+    for secret in secrets:
+        expected = hmac.new(
+            secret.encode(), f"{timestamp}.{raw_body}".encode(), hashlib.sha256
+        ).hexdigest()
+        if hmac.compare_digest(expected, signature):
+            return True, None
+    return False, "signature mismatch"
 
 
 # ── forward a call to the gateway (server-to-server; no browser CORS) ─────────
@@ -226,7 +246,8 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 creds = {}
             if creds.get("clientSecret"):
-                WEBHOOK_SECRET = derive_webhook_secret(creds.get("clientSecret"))
+                # Remembered (not overwritten) so a shared harness keeps verifying every agency signed in so far.
+                remember_secret(derive_webhook_secret(creds.get("clientSecret")))
             form = urllib.parse.urlencode({
                 "grant_type": "client_credentials",
                 "client_id": creds.get("clientId", ""),
@@ -247,7 +268,7 @@ class Handler(BaseHTTPRequestHandler):
         if url == "/set-secret":
             raw = self._body().decode("utf-8", "replace")
             try:
-                WEBHOOK_SECRET = json.loads(raw).get("secret") or WEBHOOK_SECRET
+                remember_secret(json.loads(raw).get("secret"))
             except ValueError:
                 pass
             return self._json(200, {"webhookSecretConfigured": bool(WEBHOOK_SECRET)})

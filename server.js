@@ -26,6 +26,17 @@ const API_PREFIX = process.env.API_PREFIX ?? '/partners';
 const TOLERANCE = Number(process.env.SIG_TOLERANCE || 300);
 let WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || '';
 
+// Every agency secret this harness has seen. One shared instance can be driven by several testers,
+// each signing in as a different agency against the same URL, so a delivery is valid if ANY known
+// secret signs it — not just the most recent sign-in's.
+const WEBHOOK_SECRETS = new Set();
+const rememberSecret = (secret) => {
+  if (!secret) return;
+  WEBHOOK_SECRET = secret;
+  WEBHOOK_SECRETS.add(secret);
+};
+if (WEBHOOK_SECRET) WEBHOOK_SECRETS.add(WEBHOOK_SECRET);
+
 // The endpoint no longer shows a separate signing secret; the webhook signing key is derived from
 // the API client secret, so a delivery is verified with the same client_secret used to sign in.
 const WEBHOOK_DERIVE_LABEL = 'rostered.agency.webhook.v1';
@@ -62,22 +73,26 @@ const parseSignature = (header) => {
 
 // Sign the exact bytes received; the timestamp is bound inside the signed string.
 const verify = (rawBody, header) => {
-  if (!WEBHOOK_SECRET) return { ok: false, reason: 'no secret configured on the harness' };
+  const secrets = WEBHOOK_SECRETS.size ? [...WEBHOOK_SECRETS] : (WEBHOOK_SECRET ? [WEBHOOK_SECRET] : []);
+  if (secrets.length === 0) return { ok: false, reason: 'no secret configured on the harness' };
   const parsed = parseSignature(header);
   if (!parsed) return { ok: false, reason: 'missing or malformed signature header' };
 
   const age = Math.abs(Math.floor(Date.now() / 1000) - Number(parsed.timestamp));
   if (Number.isNaN(age) || age > TOLERANCE) return { ok: false, reason: `timestamp outside ${TOLERANCE}s tolerance` };
 
-  const expected = crypto
-    .createHmac('sha256', WEBHOOK_SECRET)
-    .update(`${parsed.timestamp}.${rawBody}`)
-    .digest('hex');
+  const provided = Buffer.from(parsed.signature);
 
-  const a = Buffer.from(expected);
-  const b = Buffer.from(parsed.signature);
-  const ok = a.length === b.length && crypto.timingSafeEqual(a, b);
-  return { ok, reason: ok ? null : 'signature mismatch' };
+  // Valid if any agency this harness has signed in for produced the signature.
+  for (const secret of secrets) {
+    const expected = Buffer.from(
+      crypto.createHmac('sha256', secret).update(`${parsed.timestamp}.${rawBody}`).digest('hex'));
+    if (expected.length === provided.length && crypto.timingSafeEqual(expected, provided)) {
+      return { ok: true, reason: null };
+    }
+  }
+
+  return { ok: false, reason: 'signature mismatch' };
 };
 
 // ── small helpers ────────────────────────────────────────────────────────────
@@ -156,7 +171,8 @@ const server = http.createServer(async (req, res) => {
     let creds = {};
     try { creds = JSON.parse(raw); } catch { creds = {}; }
     // Derive the webhook signing key from the client secret so verification needs no separate secret.
-    if (creds.clientSecret) WEBHOOK_SECRET = deriveWebhookSecret(creds.clientSecret);
+    // Remembered (not overwritten) so a shared harness keeps verifying every agency signed in so far.
+    if (creds.clientSecret) rememberSecret(deriveWebhookSecret(creds.clientSecret));
     const form = new URLSearchParams({ grant_type: 'client_credentials', client_id: creds.clientId || '', client_secret: creds.clientSecret || '' }).toString();
     const out = await forward({
       method: 'POST',
@@ -172,7 +188,7 @@ const server = http.createServer(async (req, res) => {
   // Set the webhook signing secret at runtime, so it never has to sit in a URL or the page source.
   if (req.method === 'POST' && url === '/set-secret') {
     const raw = (await readBody(req)).toString('utf8');
-    try { WEBHOOK_SECRET = JSON.parse(raw).secret || WEBHOOK_SECRET; } catch { /* keep current */ }
+    try { rememberSecret(JSON.parse(raw).secret); } catch { /* keep current */ }
     return json(res, 200, { webhookSecretConfigured: Boolean(WEBHOOK_SECRET) });
   }
 
