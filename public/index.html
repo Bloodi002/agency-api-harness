@@ -142,6 +142,16 @@ const $ = (s) => document.querySelector(s);
 let fullSpec = null;
 let granted = [];        // scopes the current token holds
 window.__token = null;
+let myAgencyId = null;    // the agency the current token belongs to; scopes the feed to it
+let feedSource = null;    // the live EventSource, reopened per agency on sign-in
+
+// The agency id rides in the token; reading it lets the shared harness show only this agency's deliveries.
+function agencyFromToken(token) {
+  try {
+    const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(payload)).agencyId || null;
+  } catch { return null; }
+}
 
 // ── config + webhook URL ─────────────────────────────────────────────────────
 async function loadConfig() {
@@ -219,6 +229,9 @@ async function signIn() {
     }
     window.__token = j.access_token;
     granted = (j.scope || '').split(' ').filter(Boolean);
+    // Re-scope the feed to this agency so a shared harness stops showing other agencies' deliveries.
+    myAgencyId = agencyFromToken(j.access_token);
+    startFeed();
     $('#authStatus').textContent = 'Signed in — token valid for ' + (j.expires_in || 3600) + 's.';
     $('#authStatus').className = 'status ok';
     $('#scopePill').textContent = granted.length + ' scope' + (granted.length === 1 ? '' : 's');
@@ -258,11 +271,16 @@ function renderEvent(e) {
 const esc = (v) => String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
 function startFeed() {
-  fetch('/received').then((r) => r.json()).then((rows) => rows.slice(0, 30).reverse().forEach(renderEvent)).catch(() => {});
-  const es = new EventSource('/events');
+  // Reopened on sign-in so the agency filter takes effect; old stream and stale rows are dropped first.
+  if (feedSource) { feedSource.close(); feedSource = null; }
+  const q = myAgencyId ? '?agencyId=' + encodeURIComponent(myAgencyId) : '';
+  $('#feed').innerHTML = '<div class="empty">Waiting for deliveries…</div>';
+  fetch('/received' + q).then((r) => r.json()).then((rows) => rows.slice(0, 30).reverse().forEach(renderEvent)).catch(() => {});
+  const es = new EventSource('/events' + q);
   es.onopen = () => { $('#conn').className = 'conn on'; $('#conn').innerHTML = '<span class="d"></span>live'; };
   es.onerror = () => { $('#conn').className = 'conn'; $('#conn').innerHTML = '<span class="d"></span>disconnected'; };
   es.onmessage = (m) => { try { renderEvent(JSON.parse(m.data)); } catch {} };
+  feedSource = es;
 }
 
 // ── wire up ──────────────────────────────────────────────────────────────────

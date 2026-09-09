@@ -50,11 +50,17 @@ const received = [];
 const seenEventIds = new Set();
 const sseClients = new Set();
 
+// The agency a delivery belongs to: webhook.test carries agencyId, other events tblAgencyId.
+const agencyOf = (p) =>
+  (p && (p.agencyId || p.tblAgencyId || (p.data && (p.data.agencyId || p.data.tblAgencyId)))) || null;
+
 const pushEvent = (entry) => {
   received.unshift(entry);
   received.splice(200);
   const frame = `data: ${JSON.stringify(entry)}\n\n`;
   for (const res of sseClients) {
+    // One shared harness serves several agencies; a browser signed in as one only sees that one's deliveries.
+    if (res._agencyId && entry.agencyId && res._agencyId !== entry.agencyId) continue;
     try { res.write(frame); } catch { sseClients.delete(res); }
   }
 };
@@ -108,6 +114,12 @@ const json = (res, code, obj) => {
   const body = JSON.stringify(obj);
   res.writeHead(code, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
   res.end(body);
+};
+
+// One query-string value off the raw request url, or null.
+const queryParam = (req, name) => {
+  const i = req.url.indexOf('?');
+  return i === -1 ? null : (new URLSearchParams(req.url.slice(i + 1)).get(name) || null);
 };
 
 // Forward a request to the gateway (server-to-server; no browser CORS involved).
@@ -193,9 +205,13 @@ const server = http.createServer(async (req, res) => {
   }
 
   // The live feed of received deliveries.
-  if (req.method === 'GET' && url === '/received') return json(res, 200, received);
+  if (req.method === 'GET' && url === '/received') {
+    const aid = queryParam(req, 'agencyId');
+    return json(res, 200, aid ? received.filter((e) => !e.agencyId || e.agencyId === aid) : received);
+  }
   if (req.method === 'POST' && url === '/reset') { received.length = 0; seenEventIds.clear(); return json(res, 200, { cleared: true }); }
   if (req.method === 'GET' && url === '/events') {
+    res._agencyId = queryParam(req, 'agencyId');
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', 'access-control-allow-origin': '*' });
     res.write(': connected\n\n');
     sseClients.add(res);
@@ -232,6 +248,7 @@ const server = http.createServer(async (req, res) => {
       eventId,
       deliveryId: req.headers['x-rosteredai-delivery-id'],
       apiVersion: req.headers['x-rosteredai-api-version'],
+      agencyId: agencyOf(parsed),
       valid: verdict.ok,
       reason: verdict.reason || null,
       duplicate: verdict.ok && Boolean(eventId) && seenEventIds.has(eventId),
