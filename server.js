@@ -21,7 +21,7 @@ const path = require('path');
 const { URL } = require('url');
 
 const PORT = Number(process.env.PORT || 4000);
-const GATEWAY_BASE = (process.env.GATEWAY_BASE || 'http://localhost:7000').replace(/\/+$/, '');
+const GATEWAY_BASE = (process.env.GATEWAY_BASE || 'http://202.131.115.228:8081/api.rosteredaidev').replace(/\/+$/, '');
 const API_PREFIX = process.env.API_PREFIX ?? '/partners';
 const TOLERANCE = Number(process.env.SIG_TOLERANCE || 300);
 let WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || '';

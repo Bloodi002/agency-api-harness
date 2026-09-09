@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(os.environ.get("PORT", "4000"))
-GATEWAY_BASE = os.environ.get("GATEWAY_BASE", "http://localhost:7000").rstrip("/")
+GATEWAY_BASE = os.environ.get("GATEWAY_BASE", "http://202.131.115.228:8081/api.rosteredaidev").rstrip("/")
 API_PREFIX = os.environ.get("API_PREFIX", "/partners")
 TOLERANCE = int(os.environ.get("SIG_TOLERANCE", "300"))
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")

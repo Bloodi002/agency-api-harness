@@ -10,7 +10,7 @@ services:
     envVars:
       - key: GATEWAY_BASE
         # The public gateway for the environment you are demoing (no trailing slash).
-        value: https://apidev.rostered.ai
+        value: http://202.131.115.228:8081/api.rosteredaidev
       - key: API_PREFIX
         value: /partners
       # Set the webhook signing secret here, or in the UI at runtime.
