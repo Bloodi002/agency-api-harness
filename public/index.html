@@ -112,7 +112,7 @@
       <!-- Webhooks -->
       <div class="card">
         <h2>2 · Webhooks <span class="conn" id="conn" style="margin-left:8px"><span class="d"></span>connecting…</span></h2>
-        <p class="sub">Register this URL as your webhook endpoint in the portal, then send a test — deliveries appear live below, verified with the signing key derived from your client secret (no separate secret needed once you have a token).</p>
+        <p class="sub">Register this URL as your webhook endpoint in the portal. The log below is every webhook your agency has triggered — read live from the API — with each one's delivery status, so you see them whether or not the signed POST reached this harness.</p>
         <label>Your delivery URL (register this in the portal)</label>
         <div class="hookurl"><code id="hookUrl">…/webhooks/rostered</code><button class="ghost" id="copyHook">Copy</button></div>
         <div class="row" style="margin-top:6px">
@@ -121,26 +121,9 @@
             <input id="whsec" type="password" placeholder="auto-derived from your client secret" autocomplete="off">
           </div>
           <button class="ghost" id="setSecret">Set secret</button>
-          <button class="ghost" id="clearFeed">Clear</button>
+          <button class="ghost" id="refreshLog">Refresh log</button>
         </div>
-        <div class="row" style="margin-top:6px">
-          <div>
-            <label>Simulate an event (real ones come from tenant/admin/scheduled actions)</label>
-            <select id="simEvent">
-              <option value="agency.tenant_mapping.changed">agency.tenant_mapping.changed</option>
-              <option value="agency.status.changed">agency.status.changed</option>
-              <option value="agency.compliance.document.changed">agency.compliance.document.changed</option>
-              <option value="shift.request.received">shift.request.received</option>
-              <option value="shift.request.escalated">shift.request.escalated</option>
-              <option value="shift.request.filled">shift.request.filled</option>
-              <option value="shift.request.expired">shift.request.expired</option>
-              <option value="shift.candidate.accepted">shift.candidate.accepted</option>
-              <option value="shift.candidate.rejected">shift.candidate.rejected</option>
-              <option value="webhook.test">webhook.test</option>
-            </select>
-          </div>
-          <button id="simSend">Simulate delivery</button>
-        </div>
+        <label style="margin-top:8px">Triggered webhooks (delivery log)</label>
         <div class="feed" id="feed"><div class="empty">Waiting for deliveries…</div></div>
       </div>
     </div>
@@ -160,8 +143,7 @@ const $ = (s) => document.querySelector(s);
 let fullSpec = null;
 let granted = [];        // scopes the current token holds
 window.__token = null;
-let feedKey = null;       // server-issued key that unlocks only this agency's deliveries
-let feedSource = null;    // the live EventSource, reopened per agency on sign-in
+let feedKey = null;       // server-issued key that scopes any live delivery stream to this agency
 
 // ── config + webhook URL ─────────────────────────────────────────────────────
 async function loadConfig() {
@@ -239,10 +221,9 @@ async function signIn() {
     }
     window.__token = j.access_token;
     granted = (j.scope || '').split(' ').filter(Boolean);
-    // The server issues this key bound to our agency; the feed rejects anything else, so a shared
-    // harness only ever sends us our own deliveries.
     feedKey = j.feedKey || null;
-    startFeed();
+    // Load the delivery log for this agency and keep it refreshing.
+    startLog();
     $('#authStatus').textContent = 'Signed in — token valid for ' + (j.expires_in || 3600) + 's.';
     $('#authStatus').className = 'status ok';
     $('#scopePill').textContent = granted.length + ' scope' + (granted.length === 1 ? '' : 's');
@@ -264,50 +245,77 @@ function paintScopes(scopes) {
     .join('');
 }
 
-// ── webhook feed ─────────────────────────────────────────────────────────────
-function renderEvent(e) {
-  const feed = $('#feed');
-  const empty = feed.querySelector('.empty');
-  if (empty) feed.innerHTML = '';
-  const d = document.createElement('div');
-  d.className = 'ev' + (e.valid ? '' : ' bad');
-  d.innerHTML =
-    `<div class="t"><strong>${esc(e.eventType)}</strong>` +
-    `<span class="tag ${e.valid ? 'ok' : 'bad'}">${e.valid ? 'signature VALID' : 'REJECTED — ' + esc(e.reason || '')}</span>` +
-    (e.simulated ? '<span class="tag warn">simulated</span>' : '') +
-    (e.duplicate ? '<span class="tag warn">duplicate</span>' : '') +
-    `<span class="tag">${esc((e.at || '').slice(11, 19))}</span></div>` +
-    (e.data ? `<pre>${esc(JSON.stringify(e.data, null, 2))}</pre>` : '');
-  feed.prepend(d);
-}
+// ── webhook delivery log ─────────────────────────────────────────────────────
 const esc = (v) => String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
-function startFeed() {
-  // Reopened on sign-in so the agency filter takes effect; old stream and stale rows are dropped first.
-  if (feedSource) { feedSource.close(); feedSource = null; }
-  const q = feedKey ? '?key=' + encodeURIComponent(feedKey) : '';
-  $('#feed').innerHTML = '<div class="empty">Waiting for deliveries…</div>';
-  fetch('/received' + q).then((r) => r.json()).then((rows) => rows.slice(0, 30).reverse().forEach(renderEvent)).catch(() => {});
-  const es = new EventSource('/events' + q);
-  es.onopen = () => { $('#conn').className = 'conn on'; $('#conn').innerHTML = '<span class="d"></span>live'; };
-  es.onerror = () => { $('#conn').className = 'conn'; $('#conn').innerHTML = '<span class="d"></span>disconnected'; };
-  es.onmessage = (m) => { try { renderEvent(JSON.parse(m.data)); } catch {} };
-  feedSource = es;
+// Delivery status comes off the API as an enum — accept either the number or the name.
+function statusInfo(s) {
+  const map = {
+    0: ['Pending', 'warn'], 1: ['Delivered', 'ok'], 2: ['Failed', 'bad'], 3: ['Dead-letter', 'bad'],
+    Pending: ['Pending', 'warn'], Success: ['Delivered', 'ok'], Failed: ['Failed', 'bad'], DeadLetter: ['Dead-letter', 'bad'],
+  };
+  return map[s] || [String(s ?? 'unknown'), 'warn'];
+}
+
+function renderDelivery(d) {
+  const [label, tone] = statusInfo(d.status);
+  const el = document.createElement('div');
+  el.className = 'ev' + (tone === 'bad' ? ' bad' : '');
+  const when = String(d.lastAttemptAt || d.createdDate || '').replace('T', ' ').slice(0, 19);
+  el.innerHTML =
+    `<div class="t"><strong>${esc(d.eventType)}</strong>` +
+    `<span class="tag ${tone}">${esc(label)}</span>` +
+    (d.attemptCount ? `<span class="tag">attempt ${esc(d.attemptCount)}</span>` : '') +
+    (d.responseStatus != null ? `<span class="tag">HTTP ${esc(d.responseStatus)}</span>` : '') +
+    `<span class="tag">${esc(when)}</span></div>` +
+    (d.endpointUrl ? `<div class="sub" style="margin-top:2px">${esc(d.endpointUrl)}</div>` : '');
+  return el;
+}
+
+let logTimer = null;
+// The log is the source of truth for what fired: every delivery the API recorded for this agency,
+// with its status, whether or not the signed POST actually reached this harness.
+async function loadLog() {
+  if (!window.__token) return;
+  try {
+    const r = await fetch('/api/agency/webhooks/deliveries', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + window.__token },
+      body: JSON.stringify({ page: 1, pageSize: 50 }),
+    });
+    const j = await r.json().catch(() => ({}));
+    const items = (j && j.data && j.data.items) || [];
+    // Newest first — ISO timestamps sort lexically, so no Date parsing needed.
+    items.sort((a, b) => String(b.lastAttemptAt || b.createdDate || '').localeCompare(String(a.lastAttemptAt || a.createdDate || '')));
+    const feed = $('#feed');
+    if (items.length === 0) { feed.innerHTML = '<div class="empty">No webhooks triggered yet.</div>'; }
+    else { feed.innerHTML = ''; items.forEach((d) => feed.appendChild(renderDelivery(d))); }
+    $('#conn').className = 'conn on'; $('#conn').innerHTML = '<span class="d"></span>live';
+  } catch {
+    $('#conn').className = 'conn'; $('#conn').innerHTML = '<span class="d"></span>disconnected';
+  }
+}
+
+function startLog() {
+  if (logTimer) { clearInterval(logTimer); logTimer = null; }
+  if (!window.__token) {
+    $('#feed').innerHTML = '<div class="empty">Get a token to load the delivery log.</div>';
+    $('#conn').className = 'conn'; $('#conn').innerHTML = '<span class="d"></span>not signed in';
+    return;
+  }
+  loadLog();
+  logTimer = setInterval(loadLog, 4000);
 }
 
 // ── wire up ──────────────────────────────────────────────────────────────────
 $('#signIn').addEventListener('click', signIn);
 $('#onlyAllowed').addEventListener('change', renderSwagger);
 $('#copyHook').addEventListener('click', () => navigator.clipboard.writeText($('#hookUrl').textContent));
-$('#clearFeed').addEventListener('click', () => { fetch('/reset', { method: 'POST' }); $('#feed').innerHTML = '<div class="empty">Cleared.</div>'; });
+$('#refreshLog').addEventListener('click', loadLog);
 $('#setSecret').addEventListener('click', async () => {
   await fetch('/set-secret', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ secret: $('#whsec').value.trim() }) });
   $('#whsec').placeholder = 'secret set ✓';
   $('#whsec').value = '';
-});
-$('#simSend').addEventListener('click', async () => {
-  if (!feedKey) { $('#authStatus').textContent = 'Get a token first — a simulated delivery is signed as your agency.'; $('#authStatus').className = 'status err'; return; }
-  await fetch('/simulate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: feedKey, eventType: $('#simEvent').value }) });
 });
 const savedCid = localStorage.getItem('cid'); if (savedCid) $('#cid').value = savedCid;
 
@@ -316,7 +324,7 @@ const savedCid = localStorage.getItem('cid'); if (savedCid) $('#cid').value = sa
   paintScopes([]);
   fullSpec = await fetch('/agency-partner-openapi.json').then((r) => r.json());
   renderSwagger();
-  startFeed();
+  startLog();
 })();
 </script>
 </body>
