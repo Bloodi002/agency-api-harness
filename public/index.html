@@ -123,6 +123,24 @@
           <button class="ghost" id="setSecret">Set secret</button>
           <button class="ghost" id="clearFeed">Clear</button>
         </div>
+        <div class="row" style="margin-top:6px">
+          <div>
+            <label>Simulate an event (real ones come from tenant/admin/scheduled actions)</label>
+            <select id="simEvent">
+              <option value="agency.tenant_mapping.changed">agency.tenant_mapping.changed</option>
+              <option value="agency.status.changed">agency.status.changed</option>
+              <option value="agency.compliance.document.changed">agency.compliance.document.changed</option>
+              <option value="shift.request.received">shift.request.received</option>
+              <option value="shift.request.escalated">shift.request.escalated</option>
+              <option value="shift.request.filled">shift.request.filled</option>
+              <option value="shift.request.expired">shift.request.expired</option>
+              <option value="shift.candidate.accepted">shift.candidate.accepted</option>
+              <option value="shift.candidate.rejected">shift.candidate.rejected</option>
+              <option value="webhook.test">webhook.test</option>
+            </select>
+          </div>
+          <button id="simSend">Simulate delivery</button>
+        </div>
         <div class="feed" id="feed"><div class="empty">Waiting for deliveries…</div></div>
       </div>
     </div>
@@ -256,6 +274,7 @@ function renderEvent(e) {
   d.innerHTML =
     `<div class="t"><strong>${esc(e.eventType)}</strong>` +
     `<span class="tag ${e.valid ? 'ok' : 'bad'}">${e.valid ? 'signature VALID' : 'REJECTED — ' + esc(e.reason || '')}</span>` +
+    (e.simulated ? '<span class="tag warn">simulated</span>' : '') +
     (e.duplicate ? '<span class="tag warn">duplicate</span>' : '') +
     `<span class="tag">${esc((e.at || '').slice(11, 19))}</span></div>` +
     (e.data ? `<pre>${esc(JSON.stringify(e.data, null, 2))}</pre>` : '');
@@ -285,6 +304,10 @@ $('#setSecret').addEventListener('click', async () => {
   await fetch('/set-secret', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ secret: $('#whsec').value.trim() }) });
   $('#whsec').placeholder = 'secret set ✓';
   $('#whsec').value = '';
+});
+$('#simSend').addEventListener('click', async () => {
+  if (!feedKey) { $('#authStatus').textContent = 'Get a token first — a simulated delivery is signed as your agency.'; $('#authStatus').className = 'status err'; return; }
+  await fetch('/simulate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: feedKey, eventType: $('#simEvent').value }) });
 });
 const savedCid = localStorage.getItem('cid'); if (savedCid) $('#cid').value = savedCid;
 

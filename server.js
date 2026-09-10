@@ -54,9 +54,12 @@ const sseClients = new Set();
 const agencyOf = (p) =>
   (p && (p.agencyId || p.tblAgencyId || (p.data && (p.data.agencyId || p.data.tblAgencyId)))) || null;
 
-// Opaque feed key -> agencyId. Issued ONLY on a successful /token, from the gateway's own token, so a
-// browser cannot receive an agency's webhooks without having signed in with that agency's client secret.
+// Opaque feed key -> { agencyId, secret }. Issued ONLY on a successful /token, from the gateway's own
+// token, so a browser cannot receive an agency's webhooks without signing in with that agency's client secret.
 const feedSessions = new Map();
+// Signing secret -> agencyId, so a delivery is attributed to whichever agency's secret verified it —
+// robust even for events whose payload carries no agency id (e.g. shift.*).
+const secretToAgency = new Map();
 const agencyFromJwt = (token) => {
   try {
     const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
@@ -100,16 +103,62 @@ const verify = (rawBody, header) => {
 
   const provided = Buffer.from(parsed.signature);
 
-  // Valid if any agency this harness has signed in for produced the signature.
+  // Valid if any agency this harness has signed in for produced the signature; the matching secret
+  // identifies which agency, so the feed can be scoped to it whatever the payload looks like.
   for (const secret of secrets) {
     const expected = Buffer.from(
       crypto.createHmac('sha256', secret).update(`${parsed.timestamp}.${rawBody}`).digest('hex'));
     if (expected.length === provided.length && crypto.timingSafeEqual(expected, provided)) {
-      return { ok: true, reason: null };
+      return { ok: true, reason: null, secret };
     }
   }
 
   return { ok: false, reason: 'signature mismatch' };
+};
+
+// Turn one signed delivery into a feed entry: verify it, attribute it to the agency whose secret
+// signed it, and push it to that agency's browser. Shared by real inbound deliveries and simulated ones.
+const recordDelivery = (rawBody, signatureHeader, meta = {}) => {
+  const verdict = verify(rawBody, signatureHeader);
+  let parsed = null;
+  try { parsed = JSON.parse(rawBody); } catch { /* shown raw */ }
+  const agencyId = (verdict.secret && secretToAgency.get(verdict.secret)) || agencyOf(parsed);
+  const eventId = meta.eventId;
+  const entry = {
+    at: new Date().toISOString(),
+    path: '/webhooks/rostered',
+    eventType: meta.eventType || parsed?.eventType || 'unknown',
+    eventId,
+    deliveryId: meta.deliveryId,
+    apiVersion: meta.apiVersion,
+    agencyId,
+    valid: verdict.ok,
+    reason: verdict.reason || null,
+    duplicate: verdict.ok && Boolean(eventId) && seenEventIds.has(eventId),
+    simulated: Boolean(meta.simulated),
+    data: parsed?.data ?? parsed ?? null,
+    raw: rawBody,
+  };
+  pushEvent(entry);
+  if (verdict.ok && eventId) seenEventIds.add(eventId);
+  return verdict;
+};
+
+// Faithful sample payloads per event type, so simulating one reads like the real thing. Real events are
+// produced by tenant/admin/scheduled actions the agency cannot trigger itself, so this exercises them.
+const sampleGuid = () => crypto.randomUUID();
+const nowIso = () => new Date().toISOString();
+const SAMPLE_EVENTS = {
+  'webhook.test': (a) => ({ agencyId: a, message: 'Simulated test delivery from the harness.', sentAt: nowIso() }),
+  'agency.status.changed': (a) => ({ tblAgencyId: a, agencyName: 'Sample Agency', isActive: true, reason: 'Simulated', occurredAt: nowIso() }),
+  'agency.tenant_mapping.changed': (a) => ({ tblAgencyId: a, tblTenantId: sampleGuid(), isMapped: true, occurredAt: nowIso() }),
+  'agency.compliance.document.changed': (a) => ({ tblAgencyId: a, documentName: 'Public Liability Insurance', status: 'Expiring', expiresOn: nowIso(), occurredAt: nowIso() }),
+  'shift.request.received': (a) => ({ tblAgencyId: a, tblTenantId: sampleGuid(), tblTenantAgencyShiftBroadcastId: sampleGuid(), tenantName: 'Sample Tenant', shiftDate: nowIso(), startTime: '09:00', endTime: '17:00', requiredCount: 3, occurredAt: nowIso() }),
+  'shift.request.escalated': (a) => ({ tblAgencyId: a, tblTenantId: sampleGuid(), tblTenantAgencyShiftBroadcastId: sampleGuid(), requiredCount: 3, occurredAt: nowIso() }),
+  'shift.request.filled': () => ({ tblTenantAgencyShiftBroadcastId: sampleGuid(), tblRosterGeneratedShiftsId: sampleGuid(), tblTenantId: sampleGuid(), tenantName: 'Sample Tenant', shiftDate: nowIso(), startTime: '09:00', endTime: '17:00', requiredCount: 3, filledCount: 3, occurredAtUtc: nowIso() }),
+  'shift.request.expired': () => ({ tblTenantAgencyShiftBroadcastId: sampleGuid(), tblRosterGeneratedShiftsId: sampleGuid(), tblTenantId: sampleGuid(), tenantName: 'Sample Tenant', shiftDate: nowIso(), startTime: '09:00', endTime: '17:00', requiredCount: 3, filledCount: 1, occurredAtUtc: nowIso() }),
+  'shift.candidate.accepted': (a) => ({ tblAgencyId: a, tblTenantId: sampleGuid(), tblAgencyStaffId: sampleGuid(), candidateName: 'Sample Candidate', occurredAt: nowIso() }),
+  'shift.candidate.rejected': (a) => ({ tblAgencyId: a, tblTenantId: sampleGuid(), tblAgencyStaffId: sampleGuid(), candidateName: 'Sample Candidate', reason: 'Simulated', occurredAt: nowIso() }),
 };
 
 // ── small helpers ────────────────────────────────────────────────────────────
@@ -195,7 +244,8 @@ const server = http.createServer(async (req, res) => {
     try { creds = JSON.parse(raw); } catch { creds = {}; }
     // Derive the webhook signing key from the client secret so verification needs no separate secret.
     // Remembered (not overwritten) so a shared harness keeps verifying every agency signed in so far.
-    if (creds.clientSecret) rememberSecret(deriveWebhookSecret(creds.clientSecret));
+    const derivedSecret = creds.clientSecret ? deriveWebhookSecret(creds.clientSecret) : '';
+    if (derivedSecret) rememberSecret(derivedSecret);
     const form = new URLSearchParams({ grant_type: 'client_credentials', client_id: creds.clientId || '', client_secret: creds.clientSecret || '' }).toString();
     const out = await forward({
       method: 'POST',
@@ -213,7 +263,8 @@ const server = http.createServer(async (req, res) => {
         const agencyId = agencyFromJwt(parsed.access_token);
         if (agencyId) {
           const key = crypto.randomBytes(24).toString('hex');
-          feedSessions.set(key, agencyId);
+          feedSessions.set(key, { agencyId, secret: derivedSecret });
+          if (derivedSecret) secretToAgency.set(derivedSecret, agencyId);
           parsed.feedKey = key;
           body = Buffer.from(JSON.stringify(parsed));
         }
@@ -231,15 +282,37 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { webhookSecretConfigured: Boolean(WEBHOOK_SECRET) });
   }
 
+  // Simulate a delivery of any event type, signed as this agency, so every event can be exercised even
+  // though real events are produced by tenant/admin/scheduled actions the agency cannot trigger itself.
+  if (req.method === 'POST' && url === '/simulate') {
+    const raw = (await readBody(req)).toString('utf8');
+    let bodyIn = {};
+    try { bodyIn = JSON.parse(raw); } catch { bodyIn = {}; }
+    const session = feedSessions.get(bodyIn.key || '');
+    if (!session || !session.secret) return json(res, 401, { error: 'Sign in first to simulate a delivery.' });
+    const eventType = SAMPLE_EVENTS[bodyIn.eventType] ? bodyIn.eventType : 'webhook.test';
+    const rawBody = JSON.stringify(SAMPLE_EVENTS[eventType](session.agencyId));
+    const t = Math.floor(Date.now() / 1000).toString();
+    const signature = crypto.createHmac('sha256', session.secret).update(`${t}.${rawBody}`).digest('hex');
+    const verdict = recordDelivery(rawBody, `t=${t},v1=${signature}`, {
+      eventType,
+      eventId: 'sim_' + crypto.randomBytes(8).toString('hex'),
+      deliveryId: 'sim_' + crypto.randomBytes(6).toString('hex'),
+      apiVersion: '2026-06-01',
+      simulated: true,
+    });
+    return json(res, 200, { ok: verdict.ok, eventType });
+  }
+
   // The live feed of received deliveries.
   if (req.method === 'GET' && url === '/received') {
     // Only this agency's history, and only for a browser holding a valid feed key.
-    const aid = feedSessions.get(queryParam(req, 'key') || '') || null;
+    const aid = feedSessions.get(queryParam(req, 'key') || '')?.agencyId || null;
     return json(res, 200, aid ? received.filter((e) => e.agencyId === aid) : []);
   }
   if (req.method === 'POST' && url === '/reset') { received.length = 0; seenEventIds.clear(); return json(res, 200, { cleared: true }); }
   if (req.method === 'GET' && url === '/events') {
-    res._agencyId = feedSessions.get(queryParam(req, 'key') || '') || null;
+    res._agencyId = feedSessions.get(queryParam(req, 'key') || '')?.agencyId || null;
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', 'access-control-allow-origin': '*' });
     res.write(': connected\n\n');
     sseClients.add(res);
@@ -265,27 +338,13 @@ const server = http.createServer(async (req, res) => {
   // Any POST that is not one of ours is treated as an inbound webhook delivery.
   if (req.method === 'POST') {
     const raw = (await readBody(req)).toString('utf8');
-    const verdict = verify(raw, req.headers['x-rosteredai-signature']);
-    let parsed = null;
-    try { parsed = JSON.parse(raw); } catch { /* shown raw */ }
-    const eventId = req.headers['x-rosteredai-event-id'];
-    const entry = {
-      at: new Date().toISOString(),
-      path: url,
-      eventType: req.headers['x-rosteredai-event-type'] || parsed?.eventType || 'unknown',
-      eventId,
+    const verdict = recordDelivery(raw, req.headers['x-rosteredai-signature'], {
+      eventType: req.headers['x-rosteredai-event-type'],
+      eventId: req.headers['x-rosteredai-event-id'],
       deliveryId: req.headers['x-rosteredai-delivery-id'],
       apiVersion: req.headers['x-rosteredai-api-version'],
-      agencyId: agencyOf(parsed),
-      valid: verdict.ok,
-      reason: verdict.reason || null,
-      duplicate: verdict.ok && Boolean(eventId) && seenEventIds.has(eventId),
-      data: parsed?.data ?? parsed ?? null,
-      raw,
-    };
-    pushEvent(entry);
+    });
     if (!verdict.ok) { res.writeHead(401).end('signature rejected'); return; } // 401 is retried
-    if (eventId) seenEventIds.add(eventId);
     res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ received: true }));
     return;
   }
