@@ -9,4 +9,3 @@ A QA harness for the RosteredAI tenant and agency integration APIs: Swagger UI t
 
 Build from the repository root: `docker build -f harness/Dockerfile .`. On Render, set the Blueprint path to `harness/render.yaml`. The harness refuses to start unless `HARNESS_PASSWORD` is set.
 
-The source of truth is `RosteredAI.Identity/sdks`; this repo is a copy for hosting.
