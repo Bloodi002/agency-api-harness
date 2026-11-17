@@ -1,0 +1,14 @@
+{
+  "name": "rosteredai-qa-harness-host",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Starts the QA harness on a plain Node host (Render native runtime).",
+  "main": "server.js",
+  "scripts": {
+    "build": "npm --prefix node ci --include=dev && npm --prefix node run build && npm --prefix harness install --omit=dev",
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
