@@ -54,16 +54,31 @@ test('the session cookie is accepted only for the configured password', () => {
 
 test('an inbox stores deliveries and verifies them as of arrival', () => {
   const store = new InboxStore();
-  const inbox = store.create('qa', 410);
+  const inbox = store.create('tester-a', 'qa', 410);
   const body = '{"eventId":"e1","eventType":"webhook.test","occurredAt":"2026-11-04T00:00:00Z","data":{}}';
   const arrived = new Date('2026-11-04T00:00:10Z');
   const header = Webhooks.generateSignatureHeader('whsec_abc', body, Math.floor(arrived.getTime() / 1000));
   assert.equal(store.receive(inbox.id, { 'x-rosteredai-signature': header, cookie: 'dropped' }, Buffer.from(body), arrived), 410);
   assert.equal(store.receive('missing-inbox-id', {}, Buffer.from(body)), undefined);
-  assert.deepEqual(Object.keys(store.get(inbox.id).deliveries[0].headers), ['x-rosteredai-signature']);
-  assert.equal(store.verify(inbox.id, 'whsec_abc')[0].valid, true);
-  assert.equal(store.verify(inbox.id, 'whsec_wrong')[0].valid, false);
-  assert.throws(() => store.update(inbox.id, 302), /Reply status/);
+  assert.deepEqual(Object.keys(store.get('tester-a', inbox.id).deliveries[0].headers), ['x-rosteredai-signature']);
+  assert.equal(store.verify('tester-a', inbox.id, 'whsec_abc')[0].valid, true);
+  assert.equal(store.verify('tester-a', inbox.id, 'whsec_wrong')[0].valid, false);
+  assert.throws(() => store.update('tester-a', inbox.id, 302), /Reply status/);
+});
+
+test('each tester sees and changes only their own inboxes', () => {
+  const store = new InboxStore();
+  const mine = store.create('tester-a', 'company A');
+  const theirs = store.create('tester-b', 'company B');
+  assert.deepEqual(store.list('tester-a').map((i) => i.id), [mine.id]);
+  assert.deepEqual(store.list('tester-b').map((i) => i.id), [theirs.id]);
+  assert.equal(store.get('tester-a', theirs.id), undefined);
+  assert.equal(store.update('tester-a', theirs.id, 500), undefined);
+  assert.equal(store.clear('tester-a', theirs.id), false);
+  assert.equal(store.delete('tester-a', theirs.id), false);
+  assert.equal(store.verify('tester-a', theirs.id, 'whsec_abc'), undefined);
+  assert.equal(store.receive(theirs.id, {}, Buffer.from('{}')), 204);
+  assert.equal(store.get('tester-b', theirs.id).deliveryCount, 1);
 });
 
 const jwt = (claims) => ['{"alg":"none"}', JSON.stringify(claims), 'sig'].map((p) => Buffer.from(p).toString('base64url')).join('.');

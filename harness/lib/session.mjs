@@ -1,6 +1,7 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
 export const SESSION_COOKIE = 'rai_harness';
+export const TESTER_COOKIE = 'rai_tester';
 const SESSION_SECONDS = 12 * 60 * 60;
 
 // A cookie, not HTTP Basic: Swagger UI sends its own Authorization header on proxied calls, which would replace Basic.
@@ -32,6 +33,20 @@ export function passwordMatches(candidate, password) {
 
 export function sessionCookie(password, secure) {
   return `${SESSION_COOKIE}=${sessionValue(password)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_SECONDS}${secure ? '; Secure' : ''}`;
+}
+
+/** The browser's own tester id, which owns its inboxes; undefined when absent or malformed. */
+export function testerOf(cookieHeader) {
+  const id = parseCookies(cookieHeader)[TESTER_COOKIE];
+  return id && /^[A-Za-z0-9_-]{22}$/.test(id) ? id : undefined;
+}
+
+export function newTester() {
+  return randomBytes(16).toString('base64url');
+}
+
+export function testerCookie(id, secure) {
+  return `${TESTER_COOKIE}=${id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}${secure ? '; Secure' : ''}`;
 }
 
 export function clearedSessionCookie() {

@@ -1,47 +1,56 @@
 import { randomBytes } from 'node:crypto';
 import { Webhooks, WebhookHeaders, WebhookSignatureError } from '@rosteredai/sdk';
 
-const MAX_INBOXES = 100;
+const MAX_INBOXES = 500;
+const MAX_INBOXES_PER_TESTER = 20;
 const MAX_DELIVERIES = 50;
 export const MAX_DELIVERY_BYTES = 1024 * 1024;
 export const REPLY_STATUSES = [204, 200, 400, 410, 500, 503];
 const KEPT_HEADERS = Object.values(WebhookHeaders).map((h) => h.toLowerCase()).concat(['content-type', 'user-agent']);
 
-/** In-memory webhook receivers; everything here is lost when the process restarts. */
+/** In-memory webhook receivers, each owned by one tester's browser; everything here is lost when the process restarts. */
 export class InboxStore {
   #inboxes = new Map();
 
-  create(label, replyStatus = 204) {
+  create(owner, label, replyStatus = 204) {
+    const own = [...this.#inboxes.values()].filter((i) => i.owner === owner);
+    if (own.length >= MAX_INBOXES_PER_TESTER) this.#inboxes.delete(own[0].id);
     if (this.#inboxes.size >= MAX_INBOXES) this.#inboxes.delete(this.#inboxes.keys().next().value);
-    const inbox = { id: randomBytes(12).toString('base64url'), label: (label ?? '').slice(0, 80), replyStatus: checkStatus(replyStatus), createdAt: new Date(), deliveries: [] };
+    const inbox = { id: randomBytes(12).toString('base64url'), owner, label: (label ?? '').slice(0, 80), replyStatus: checkStatus(replyStatus), createdAt: new Date(), deliveries: [] };
     this.#inboxes.set(inbox.id, inbox);
     return summary(inbox);
   }
 
-  list() {
-    return [...this.#inboxes.values()].reverse().map(summary);
+  list(owner) {
+    return [...this.#inboxes.values()].filter((i) => i.owner === owner).reverse().map(summary);
   }
 
-  get(id) {
+  // Another tester's inbox answers as missing, so ids never reveal what others hold.
+  #own(owner, id) {
     const inbox = this.#inboxes.get(id);
+    return inbox?.owner === owner ? inbox : undefined;
+  }
+
+  get(owner, id) {
+    const inbox = this.#own(owner, id);
     return inbox && { ...summary(inbox), deliveries: inbox.deliveries.map(view) };
   }
 
-  update(id, replyStatus) {
-    const inbox = this.#inboxes.get(id);
+  update(owner, id, replyStatus) {
+    const inbox = this.#own(owner, id);
     if (!inbox) return undefined;
     inbox.replyStatus = checkStatus(replyStatus);
     return summary(inbox);
   }
 
-  clear(id) {
-    const inbox = this.#inboxes.get(id);
+  clear(owner, id) {
+    const inbox = this.#own(owner, id);
     if (inbox) inbox.deliveries = [];
     return Boolean(inbox);
   }
 
-  delete(id) {
-    return this.#inboxes.delete(id);
+  delete(owner, id) {
+    return Boolean(this.#own(owner, id)) && this.#inboxes.delete(id);
   }
 
   /** Stores one delivery and returns the status to answer with, or undefined when the inbox does not exist. */
@@ -55,8 +64,8 @@ export class InboxStore {
   }
 
   /** Checks every stored delivery with the SDK, as of the moment it arrived; the secret is used here and never kept. */
-  verify(id, secret) {
-    const inbox = this.#inboxes.get(id);
+  verify(owner, id, secret) {
+    const inbox = this.#own(owner, id);
     if (!inbox) return undefined;
     return inbox.deliveries.map((delivery) => {
       try {

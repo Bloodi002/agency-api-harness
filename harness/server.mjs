@@ -7,7 +7,7 @@ import { readConfig } from './lib/config.mjs';
 import { loadSpecs } from './lib/specs.mjs';
 import { buildCatalogue } from './lib/catalogue.mjs';
 import { ClientPool, runOperation } from './lib/runner.mjs';
-import { clearedSessionCookie, hasSession, passwordMatches, sessionCookie } from './lib/session.mjs';
+import { clearedSessionCookie, hasSession, newTester, passwordMatches, sessionCookie, testerCookie, testerOf } from './lib/session.mjs';
 import { InboxStore, MAX_DELIVERY_BYTES, REPLY_STATUSES } from './lib/inbox.mjs';
 import { runChecks } from './lib/checks.mjs';
 
@@ -87,29 +87,29 @@ async function login(req, res) {
   return send(res, 303, '', { location: `/login?failed=1&next=${encodeURIComponent(next)}` });
 }
 
-async function inboxRoute(req, res, id, action) {
+async function inboxRoute(req, res, tester, id, action) {
   const method = req.method;
   const missing = () => send(res, 404, { message: 'No such inbox; inboxes are lost when the harness restarts' });
   if (!action && method === 'GET') {
-    const found = inboxes.get(id);
+    const found = inboxes.get(tester, id);
     return found ? send(res, 200, { ...found, url: `${origin(req)}/hooks/${id}` }) : missing();
   }
   if (!action && method === 'PATCH') {
-    const updated = inboxes.update(id, (await jsonBody(req)).replyStatus);
+    const updated = inboxes.update(tester, id, (await jsonBody(req)).replyStatus);
     return updated ? send(res, 200, updated) : missing();
   }
-  if (!action && method === 'DELETE') return inboxes.delete(id) ? send(res, 204, '') : missing();
-  if (action === '/clear' && method === 'POST') return inboxes.clear(id) ? send(res, 204, '') : missing();
+  if (!action && method === 'DELETE') return inboxes.delete(tester, id) ? send(res, 204, '') : missing();
+  if (action === '/clear' && method === 'POST') return inboxes.clear(tester, id) ? send(res, 204, '') : missing();
   if (action === '/verify' && method === 'POST') {
     const { secret } = await jsonBody(req);
     if (!secret) throw failure(400, 'secret is required');
-    const results = inboxes.verify(id, secret);
+    const results = inboxes.verify(tester, id, secret);
     return results ? send(res, 200, results) : missing();
   }
   return send(res, 405, { message: 'Method not allowed' });
 }
 
-async function apiRoute(req, res, path, url) {
+async function apiRoute(req, res, tester, path, url) {
   const method = req.method;
   if (path === '/api/config' && method === 'GET') {
     const counts = Object.fromEntries(Object.entries(catalogue).map(([api, ops]) => [api, ops.size]));
@@ -127,14 +127,14 @@ async function apiRoute(req, res, path, url) {
     const scopes = String(body.scopes ?? '').split(/[\s,]+/).filter(Boolean);
     return send(res, 200, await runChecks({ baseUrl: config.baseUrl, api: body.api, clientId: body.clientId, clientSecret: body.clientSecret, scopes }));
   }
-  if (path === '/api/inboxes' && method === 'GET') return send(res, 200, inboxes.list().map((i) => ({ ...i, url: `${origin(req)}/hooks/${i.id}` })));
+  if (path === '/api/inboxes' && method === 'GET') return send(res, 200, inboxes.list(tester).map((i) => ({ ...i, url: `${origin(req)}/hooks/${i.id}` })));
   if (path === '/api/inboxes' && method === 'POST') {
     const body = await jsonBody(req);
-    const created = inboxes.create(body.label, body.replyStatus ?? 204);
+    const created = inboxes.create(tester, body.label, body.replyStatus ?? 204);
     return send(res, 201, { ...created, url: `${origin(req)}/hooks/${created.id}` });
   }
   const inbox = path.match(/^\/api\/inboxes\/([\w-]{16})(\/verify|\/clear)?$/);
-  if (inbox) return inboxRoute(req, res, inbox[1], inbox[2]);
+  if (inbox) return inboxRoute(req, res, tester, inbox[1], inbox[2]);
   return send(res, 404, { message: 'Not found' });
 }
 
@@ -161,13 +161,20 @@ async function route(req, res) {
     return send(res, 401, { message: 'Sign in to the QA harness first' });
   }
 
+  // Each browser is one tester: its inboxes are its own, while its credentials stay in its tabs.
+  let tester = testerOf(req.headers.cookie);
+  if (!tester) {
+    tester = newTester();
+    res.setHeader('set-cookie', testerCookie(tester, isSecure(req)));
+  }
+
   if (method === 'GET' && PAGES[path]) return page(res, PAGES[path]);
   if (method === 'GET' && ASSETS[path]) {
     const [file, type] = ASSETS[path];
     return send(res, 200, readFileSync(resolve(here, 'public', file)), { 'content-type': type, 'cache-control': 'no-cache' });
   }
   if (path === '/guide.md' && method === 'GET') return send(res, 200, readFileSync(guidePath), { 'content-type': 'text/markdown; charset=utf-8' });
-  if (path.startsWith('/api/')) return apiRoute(req, res, path, url);
+  if (path.startsWith('/api/')) return apiRoute(req, res, tester, path, url);
   return send(res, 404, { message: 'Not found' });
 }
 
