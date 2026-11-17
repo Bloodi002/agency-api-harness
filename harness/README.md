@@ -41,7 +41,6 @@ npm test
 Or the same image Render builds (context is the repository root, because the harness needs `node`, `openapi` and `docs`):
 
 ```bash
-cd sdks
 docker build -f harness/Dockerfile -t rosteredai-qa-harness .
 docker run --rm -p 8080:8080 -e ROSTEREDAI_BASE_URL=https://dev.rostered.ai/api.rosteredaidev -e HARNESS_PASSWORD=change-me rosteredai-qa-harness
 ```
