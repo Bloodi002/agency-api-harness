@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SDK Explorer</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/harness.css">
+</head>
+<body>
+  <header class="masthead">
+    <a class="brand" href="/">Rostered<span>AI</span> · Integration QA harness</a>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/explorer" aria-current="page">SDK explorer</a>
+      <a href="/checks">SDK checks</a>
+      <a href="/inbox">Webhook inbox</a>
+      <a href="/guide">Integration guide</a>
+    </nav>
+    <span class="env-pill" data-environment></span>
+  </header>
+  <main class="explorer-main">
+    <div class="tabs" role="tablist" aria-label="API">
+      <button type="button" role="tab" id="tab-tenant" aria-selected="true" data-api="tenant">Tenant API</button>
+      <button type="button" role="tab" id="tab-agency" aria-selected="false" data-api="agency">Agency Partner API</button>
+    </div>
+
+    <details class="panel" id="credential-panel" open>
+      <summary><strong id="credential-title">Tenant credential</strong> <span class="hint" id="credential-state"></span></summary>
+      <form id="credential" autocomplete="off" style="margin-top:12px">
+        <div class="row">
+          <div class="field"><label for="clientId">Client id</label><input type="text" id="clientId" spellcheck="false" placeholder="rai_…" required></div>
+          <div class="field"><label for="clientSecret">Client secret</label><input type="password" id="clientSecret" autocomplete="new-password" placeholder="cs_…" required></div>
+          <div class="field"><label for="scopes">Scopes (optional)</label><input type="text" id="scopes" spellcheck="false" placeholder="Empty = every scope it holds"></div>
+        </div>
+        <button type="submit">Use this credential</button>
+        <p class="hint">Kept in this browser tab only. Each call runs <code>new RosteredAIClient({ baseUrl, clientId, clientSecret, scopes })</code> on the harness, one client per credential, so the SDK's token cache is used.</p>
+      </form>
+    </details>
+
+    <div class="explorer">
+      <aside class="panel op-panel">
+        <label for="search">Find an operation</label>
+        <input type="text" id="search" placeholder="Name, path or scope, e.g. timesheet" spellcheck="false">
+        <p class="hint" id="count"></p>
+        <div class="op-list" id="list" role="listbox" aria-label="SDK operations"></div>
+      </aside>
+
+      <section class="panel" id="detail">
+        <p class="hint">Choose an operation on the left.</p>
+      </section>
+    </div>
+  </main>
+  <script src="/harness.js"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const state = { api: 'tenant', operations: [], selected: undefined };
+    const el = (tag, props = {}, ...children) => {
+      const node = Object.assign(document.createElement(tag), props);
+      node.append(...children);
+      return node;
+    };
+
+    function showCredential() {
+      const c = harness.credential(state.api);
+      $('credential-title').textContent = state.api === 'tenant' ? 'Tenant credential' : 'Agency credential';
+      $('clientId').value = c.clientId ?? '';
+      $('clientSecret').value = c.clientSecret ?? '';
+      $('scopes').value = c.scopes ?? '';
+      $('credential-state').textContent = c.clientId ? `using ${c.clientId}` : 'not set';
+      $('credential-panel').open = !c.clientId;
+    }
+
+    async function loadApi(api) {
+      state.api = api;
+      document.querySelectorAll('[role=tab]').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.api === api)));
+      showCredential();
+      state.operations = await harness.api(`/api/operations?api=${api}`);
+      renderList();
+      const wanted = new URLSearchParams(location.search).get('op');
+      const initial = state.operations.find((o) => o.id === wanted);
+      if (initial) select(initial); else $('detail').replaceChildren(el('p', { className: 'hint', textContent: 'Choose an operation on the left.' }));
+    }
+
+    function renderList() {
+      const term = $('search').value.trim().toLowerCase();
+      const matches = state.operations.filter((o) => !term || [o.method, o.path, o.summary, o.tag, o.group, ...o.scopes].join(' ').toLowerCase().includes(term));
+      $('count').textContent = `${matches.length} of ${state.operations.length} operations`;
+      const groups = new Map();
+      for (const o of matches) groups.set(o.tag, [...(groups.get(o.tag) ?? []), o]);
+      $('list').replaceChildren(...[...groups].flatMap(([tag, ops]) => [
+        el('h3', { className: 'op-group', textContent: tag }),
+        ...ops.map((o) => {
+          const button = el('button', { type: 'button', className: 'op-item', role: 'option' },
+            el('span', { className: `verb verb-${o.httpMethod.toLowerCase()}`, textContent: o.httpMethod }),
+            el('span', { className: 'op-name' }, el('span', { textContent: o.summary || o.method }), el('code', { textContent: `${o.group}.${o.method}` })));
+          button.setAttribute('aria-selected', String(state.selected?.id === o.id));
+          button.addEventListener('click', () => select(o));
+          return button;
+        }),
+      ]));
+    }
+
+    function fieldInput(field) {
+      const id = `field-${field.name}`;
+      const label = el('label', { htmlFor: id }, `${field.name} `, el('span', { className: 'hint', textContent: `(${field.in}${field.required ? ', required' : ''})` }));
+      let input;
+      if (field.binary) {
+        input = el('input', { type: 'file', id, multiple: Boolean(field.multiple) });
+      } else if (field.in === 'body') {
+        input = el('textarea', { id, rows: 12, spellcheck: false, className: 'mono', value: field.example === undefined ? '{}' : JSON.stringify(field.example, null, 2) });
+      } else {
+        input = el('input', { type: 'text', id, spellcheck: false, placeholder: field.example === undefined || field.example === null ? '' : String(field.example) });
+      }
+      input.dataset.field = field.name;
+      return el('div', { className: 'field' }, label, input, field.description ? el('p', { className: 'hint', textContent: field.description }) : '');
+    }
+
+    function select(operation) {
+      state.selected = operation;
+      history.replaceState(null, '', `/explorer?api=${state.api}&op=${encodeURIComponent(operation.id)}`);
+      renderList();
+      const form = el('form', { id: 'run-form', autocomplete: 'off' }, ...operation.fields.map(fieldInput),
+        el('button', { type: 'submit', id: 'run', textContent: 'Run with the SDK' }));
+      form.addEventListener('submit', (event) => { event.preventDefault(); run(operation); });
+      $('detail').replaceChildren(
+        el('h2', { style: 'margin-top:0', textContent: operation.summary || operation.method }),
+        el('p', {}, el('span', { className: `verb verb-${operation.httpMethod.toLowerCase()}`, textContent: operation.httpMethod }), ' ', el('code', { textContent: operation.path })),
+        el('p', {}, 'SDK: ', el('code', { textContent: `client.${operation.api}.${operation.group}.${operation.method}(…)` })),
+        el('p', {}, 'Scopes (any one): ', ...operation.scopes.flatMap((s) => [el('code', { textContent: s }), ' '])),
+        el('details', {}, el('summary', { textContent: 'Description' }), el('p', { className: 'description', textContent: operation.description })),
+        form,
+        el('div', { id: 'result' }),
+      );
+    }
+
+    const readFile = (file) => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({ name: file.name, type: file.type, base64: String(reader.result).split(',')[1] ?? '' });
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+
+    async function collect(operation) {
+      const values = {};
+      const files = {};
+      for (const field of operation.fields) {
+        const input = document.querySelector(`[data-field="${CSS.escape(field.name)}"]`);
+        if (field.binary) {
+          files[field.name] = await Promise.all([...input.files].map(readFile));
+        } else if (field.in === 'body') {
+          try { values[field.name] = JSON.parse(input.value || 'null'); } catch (e) { throw new Error(`${field.name} is not valid JSON: ${e.message}`); }
+        } else if (input.value.trim() !== '') {
+          values[field.name] = input.value.trim();
+        }
+      }
+      return { values, files };
+    }
+
+    function snippet(operation, values, files) {
+      const args = { ...values };
+      for (const [name, list] of Object.entries(files)) if (list.length) args[name] = list.length > 1 ? list.map((f) => `<File ${f.name}>`) : `<File ${list[0].name}>`;
+      return `const result = await client.${operation.api}.${operation.group}.${operation.method}(${JSON.stringify(args, null, 2)});`;
+    }
+
+    async function run(operation) {
+      const credential = harness.credential(state.api);
+      const result = $('result');
+      if (!credential.clientId || !credential.clientSecret) {
+        $('credential-panel').open = true;
+        result.replaceChildren(el('p', { className: 'notice error', textContent: `Enter a ${state.api} credential above first.` }));
+        return;
+      }
+      const button = $('run');
+      button.disabled = true;
+      button.textContent = 'Running…';
+      try {
+        const { values, files } = await collect(operation);
+        const scopes = (credential.scopes ?? '').split(/[\s,]+/).filter(Boolean);
+        const outcome = await harness.api('/api/run', { method: 'POST', body: { api: state.api, id: operation.id, credential: { clientId: credential.clientId, clientSecret: credential.clientSecret, scopes }, values, files } });
+        const heading = outcome.ok
+          ? el('p', { className: 'outcome pass', textContent: `Returned in ${outcome.ms} ms` })
+          : el('p', { className: 'outcome fail', textContent: `Threw ${outcome.error.type}${outcome.error.status ? ` ${outcome.error.status}` : ''}${outcome.error.code ? ` ${outcome.error.code}` : ''} in ${outcome.ms} ms` });
+        const calls = el('table', {}, el('thead', {}, el('tr', {}, ...['Method', 'Path', 'Status', 'Time'].map((h) => el('th', { textContent: h })))),
+          el('tbody', {}, ...outcome.calls.map((c) => el('tr', {}, harness.cell(c.method), harness.cell(`${c.path}${c.query}`, 'mono'), harness.cell(String(c.status)), harness.cell(`${c.ms} ms`)))));
+        result.replaceChildren(
+          el('h2', { textContent: 'Result' }), heading,
+          el('pre', { textContent: JSON.stringify(outcome.ok ? outcome.result : outcome.error, null, 2) }),
+          el('h3', { textContent: 'HTTP calls the SDK made' }), el('div', { className: 'table-wrap' }, calls),
+          el('h3', { textContent: 'The same call in Node' }), el('pre', { textContent: snippet(operation, values, files) }),
+        );
+      } catch (e) {
+        result.replaceChildren(el('p', { className: 'notice error', textContent: e.message }));
+      } finally {
+        button.disabled = false;
+        button.textContent = 'Run with the SDK';
+      }
+    }
+
+    $('credential').addEventListener('submit', (event) => {
+      event.preventDefault();
+      harness.saveCredential(state.api, { clientId: $('clientId').value.trim(), clientSecret: $('clientSecret').value, scopes: $('scopes').value.trim() });
+      showCredential();
+    });
+    $('search').addEventListener('input', renderList);
+    document.querySelectorAll('[role=tab]').forEach((t) => t.addEventListener('click', () => {
+      history.replaceState(null, '', `/explorer?api=${t.dataset.api}`);
+      loadApi(t.dataset.api);
+    }));
+
+    harness.showEnvironment();
+    loadApi(new URLSearchParams(location.search).get('api') === 'agency' ? 'agency' : 'tenant');
+  </script>
+</body>
+</html>

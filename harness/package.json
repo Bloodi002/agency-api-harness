@@ -1,0 +1,17 @@
+{
+  "name": "rosteredai-qa-harness",
+  "version": "0.1.0",
+  "private": true,
+  "description": "QA harness for the RosteredAI tenant and agency integration APIs: Swagger UI through a proxy, SDK checks and a webhook inbox.",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@rosteredai/sdk": "file:../node"
+  }
+}

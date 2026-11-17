@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Integration QA Harness</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/harness.css">
+</head>
+<body>
+  <header class="masthead">
+    <a class="brand" href="/">Rostered<span>AI</span> · Integration QA harness</a>
+    <nav>
+      <a href="/" aria-current="page">Home</a>
+      <a href="/explorer">SDK explorer</a>
+      <a href="/checks">SDK checks</a>
+      <a href="/inbox">Webhook inbox</a>
+      <a href="/guide">Integration guide</a>
+    </nav>
+    <span class="env-pill" data-environment></span>
+    <form method="post" action="/logout" id="logout" hidden><button class="secondary" type="submit">Sign out</button></form>
+  </header>
+  <main>
+    <h1>Test the integration APIs through the SDK</h1>
+    <p class="lede">Every call here is made by <code>@rosteredai/sdk</code> <span data-sdk-version></span>, the same package integrators install, against <strong data-environment></strong>. You test exactly what a company's code would do: token, caching, retries, typed errors and date handling.</p>
+
+    <div class="grid">
+      <a class="card" href="/explorer?api=tenant"><h3>Tenant API</h3><p><span id="tenant-count">All</span> SDK operations for organisations: staff, rosters, timesheets, leave, forms, webhooks.</p></a>
+      <a class="card" href="/explorer?api=agency"><h3>Agency Partner API</h3><p><span id="agency-count">All</span> SDK operations for agencies: profile, candidates, compliance, shift requests, placements, webhooks.</p></a>
+      <a class="card" href="/checks"><h3>SDK checks</h3><p>One click: token, token cache, wrong secret, reads, scope refusal and the webhook signature vector.</p></a>
+      <a class="card" href="/inbox"><h3>Webhook inbox</h3><p>An HTTPS URL to register as a webhook endpoint. See each delivery and verify its signature with the SDK.</p></a>
+      <a class="card" href="/guide"><h3>Integration guide</h3><p>The guide we share with integrating companies: credentials, tokens, scopes, webhooks and the SDKs.</p></a>
+    </div>
+
+    <h2>How a QA run goes</h2>
+    <ol>
+      <li>In the SIT web app, sign in as a tenant admin (or agency admin) and open <strong>Settings › API Credentials</strong>. Create a credential with the scopes you are testing and copy the client secret; it is shown once.</li>
+      <li>Open the <a href="/explorer">SDK explorer</a>, choose Tenant or Agency, enter that credential, then pick any operation, fill in its fields and select <strong>Run with the SDK</strong>. You see what the SDK returned or threw, every HTTP call it made, and the same call as Node code.</li>
+      <li>Run <a href="/checks">SDK checks</a> with the same credential for the standard behaviour suite.</li>
+      <li>For webhooks, create an inbox on <a href="/inbox">Webhook inbox</a>, register its URL under <strong>Settings › API Access &amp; Webhooks</strong>, copy the <code>whsec_</code> secret, send a test, then verify the delivery here.</li>
+      <li>When you are done, revoke the test credential.</li>
+    </ol>
+    <p class="hint">Use SIT test credentials only. The harness runs the SDK on its server, so it sees the credential while it uses it. It keeps one SDK client per credential in memory for up to 30 idle minutes, so the token cache works, and writes nothing to disk.</p>
+  </main>
+  <script src="/harness.js"></script>
+  <script>
+    harness.showEnvironment();
+    harness.config().then(({ operations, passwordProtected }) => {
+      document.getElementById('logout').hidden = !passwordProtected;
+      document.getElementById('tenant-count').textContent = operations.tenant;
+      document.getElementById('agency-count').textContent = operations.agency;
+    });
+  </script>
+</body>
+</html>

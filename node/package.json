@@ -1,0 +1,35 @@
+{
+  "name": "@rosteredai/sdk",
+  "version": "0.1.0",
+  "description": "RosteredAI integration APIs (tenant and agency) for Node.js: OAuth2 client credentials, retries and webhook verification.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "generate": "node ../scripts/generate-node.mjs",
+    "clean": "node -e \"for (const d of ['dist','build']) require('node:fs').rmSync(d,{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.test.json && node --test \"build/test/*.test.js\"",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "typescript": "^5.6.0"
+  }
+}

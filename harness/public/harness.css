@@ -1,0 +1,122 @@
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --text: #1f2328;
+  --muted: #59636e;
+  --border: #d8dee4;
+  --brand: #01adef;
+  --brand-ink: #006f9c;
+  --pass: #1a7f37;
+  --fail: #cf222e;
+  --skip: #9a6700;
+  --code-bg: #f0f2f5;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1216;
+    --surface: #171b21;
+    --text: #e6e9ed;
+    --muted: #9aa4af;
+    --border: #2d333b;
+    --brand: #3cc4f5;
+    --brand-ink: #7fd8f9;
+    --pass: #4ac26b;
+    --fail: #ff7b72;
+    --skip: #d29922;
+    --code-bg: #20262e;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.55 "IBM Plex Sans", system-ui, sans-serif;
+}
+a { color: var(--brand-ink); }
+code, pre, .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 13px; }
+code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+pre { background: var(--code-bg); padding: 12px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+
+.masthead {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px;
+  padding: 12px 16px; background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.masthead .brand { font-weight: 600; text-decoration: none; color: var(--text); }
+.masthead .brand span { color: var(--brand); }
+.masthead nav { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.masthead nav a { text-decoration: none; color: var(--muted); }
+.masthead nav a[aria-current="page"] { color: var(--text); font-weight: 600; }
+.masthead form { margin-left: auto; }
+
+main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; }
+main.wide { max-width: none; padding: 0; }
+h1 { font-size: 24px; margin: 0 0 4px; }
+h2 { font-size: 18px; margin: 28px 0 8px; }
+.lede { color: var(--muted); margin: 0 0 20px; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.card {
+  display: block; padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  text-decoration: none; color: inherit;
+}
+a.card:hover, a.card:focus-visible { border-color: var(--brand); }
+.card h3 { margin: 0 0 4px; font-size: 16px; }
+.card p { margin: 0; color: var(--muted); font-size: 14px; }
+
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+.subbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px;
+  padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); font-size: 14px; color: var(--muted);
+}
+label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+input, select, textarea, button { font: inherit; }
+input[type="text"], input[type="password"], select, textarea {
+  width: 100%; padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text);
+}
+.inline select { width: auto; }
+.field { margin-bottom: 12px; }
+.row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.hint { font-size: 13px; color: var(--muted); margin-top: 4px; }
+button {
+  padding: 7px 14px; border-radius: 6px; border: 1px solid var(--brand); background: var(--brand); color: #fff; cursor: pointer; font-weight: 500;
+}
+button.secondary { background: transparent; color: var(--brand-ink); }
+button:disabled { opacity: .6; cursor: progress; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; }
+.outcome { font-weight: 600; text-transform: uppercase; font-size: 12px; letter-spacing: .04em; }
+.outcome.pass { color: var(--pass); }
+.outcome.fail { color: var(--fail); }
+.outcome.skip { color: var(--skip); }
+.notice { padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); margin-bottom: 16px; font-size: 14px; }
+.notice.error { border-color: var(--fail); color: var(--fail); }
+details summary { cursor: pointer; }
+.swagger-host { background: #fff; min-height: 70vh; }
+
+.env-pill { margin-left: auto; font-size: 13px; color: var(--muted); padding: 2px 10px; border: 1px solid var(--border); border-radius: 999px; }
+.tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+.tabs button { background: transparent; color: var(--brand-ink); }
+.tabs button[aria-selected="true"] { background: var(--brand); color: #fff; }
+.explorer-main { max-width: 1320px; }
+.explorer { display: grid; grid-template-columns: minmax(260px, 360px) minmax(0, 1fr); gap: 16px; margin-top: 16px; align-items: start; }
+@media (max-width: 820px) { .explorer { grid-template-columns: minmax(0, 1fr); } }
+.op-list { max-height: 70vh; overflow-y: auto; margin-top: 8px; }
+.op-group { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 14px 0 4px; }
+.op-item { display: flex; gap: 8px; align-items: flex-start; width: 100%; text-align: left; background: transparent; color: var(--text); border: 1px solid transparent; padding: 6px; font-weight: 400; }
+.op-item:hover, .op-item[aria-selected="true"] { border-color: var(--border); background: var(--bg); }
+.op-name { display: flex; flex-direction: column; min-width: 0; }
+.op-name code { background: none; padding: 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.verb { font-family: "IBM Plex Mono", monospace; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 4px; color: #fff; background: var(--muted); flex: none; }
+.verb-get { background: #1a7f37; }
+.verb-post { background: #0969da; }
+.verb-put, .verb-patch { background: #9a6700; }
+.verb-delete { background: #cf222e; }
+.description { white-space: pre-line; color: var(--muted); font-size: 14px; }
+textarea.mono { font-family: "IBM Plex Mono", monospace; font-size: 13px; }

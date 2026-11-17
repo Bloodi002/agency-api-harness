@@ -1,0 +1,24 @@
+# Render Blueprint for the SIT QA harness. Paths are from the repository root; set Render's Blueprint path to harness/render.yaml.
+services:
+  - type: web
+    name: rosteredai-sit-qa-harness
+    runtime: docker
+    dockerfilePath: ./harness/Dockerfile
+    dockerContext: .
+    plan: starter
+    region: singapore
+    healthCheckPath: /healthz
+    autoDeploy: false
+    buildFilter:
+      paths:
+        - harness/**
+        - node/**
+        - openapi/**
+        - docs/**
+    envVars:
+      - key: ROSTEREDAI_BASE_URL
+        value: https://dev.rostered.ai/api.rosteredaidev
+      - key: HARNESS_ENVIRONMENT_NAME
+        value: SIT
+      - key: HARNESS_PASSWORD
+        generateValue: true

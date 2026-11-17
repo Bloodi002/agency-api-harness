@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Webhook Inbox</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/harness.css">
+</head>
+<body>
+  <header class="masthead">
+    <a class="brand" href="/">Rostered<span>AI</span> · Integration QA harness</a>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/explorer">SDK explorer</a>
+      <a href="/checks">SDK checks</a>
+      <a href="/inbox" aria-current="page">Webhook inbox</a>
+      <a href="/guide">Integration guide</a>
+    </nav>
+    <span class="env-pill" data-environment></span>
+  </header>
+  <main>
+    <h1>Webhook inbox</h1>
+    <p class="lede">Each inbox is a public HTTPS URL you register as a webhook endpoint. It keeps the last 50 deliveries in memory (lost when the harness restarts) and answers with the status you choose, so you can test retries, <code>410 Gone</code> suspension and disabling.</p>
+
+    <form id="create" class="panel">
+      <div class="row">
+        <div class="field"><label for="label">Label</label><input type="text" id="label" maxlength="80" placeholder="e.g. Kiwi CCC staff events"></div>
+        <div class="field"><label for="reply">Answer deliveries with</label><select id="reply"></select></div>
+      </div>
+      <button type="submit">Create inbox</button>
+    </form>
+
+    <h2>Inboxes</h2>
+    <div class="table-wrap panel">
+      <table>
+        <thead><tr><th>Label</th><th>Endpoint URL</th><th>Answers</th><th>Deliveries</th><th></th></tr></thead>
+        <tbody id="inboxes"><tr><td colspan="5">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <section id="detail" hidden>
+      <h2 id="detail-title">Deliveries</h2>
+      <div class="panel">
+        <div class="row">
+          <div class="field">
+            <label for="secret">Endpoint signing secret</label>
+            <input type="password" id="secret" autocomplete="off" spellcheck="false" placeholder="whsec_…">
+            <p class="hint">Checked with the SDK against each delivery as of the moment it arrived; not stored.</p>
+          </div>
+          <div class="field">
+            <label for="detail-reply">Answer deliveries with</label>
+            <select id="detail-reply"></select>
+          </div>
+        </div>
+        <button type="button" id="verify">Verify signatures</button>
+        <button type="button" class="secondary" id="refresh">Refresh</button>
+        <button type="button" class="secondary" id="clear">Clear deliveries</button>
+        <button type="button" class="secondary" id="remove">Delete inbox</button>
+      </div>
+      <p class="notice error" id="detail-error" hidden></p>
+      <div class="table-wrap panel" style="margin-top:12px">
+        <table>
+          <thead><tr><th>Received</th><th>Event</th><th>Ids</th><th>Answered</th><th>Signature</th><th>Body</th></tr></thead>
+          <tbody id="deliveries"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script src="/harness.js"></script>
+  <script>harness.showEnvironment();</script>
+  <script>
+    let selected;
+    let verdicts = {};
+    const $ = (id) => document.getElementById(id);
+
+    async function fillReplies() {
+      const { replyStatuses } = await harness.config();
+      for (const select of [$('reply'), $('detail-reply')]) select.replaceChildren(...replyStatuses.map((s) => new Option(String(s), String(s))));
+    }
+
+    async function loadInboxes() {
+      const inboxes = await harness.api('/api/inboxes');
+      if (inboxes.length === 0) {
+        const tr = document.createElement('tr');
+        const td = harness.cell('No inboxes yet.');
+        td.colSpan = 5;
+        tr.append(td);
+        $('inboxes').replaceChildren(tr);
+        return;
+      }
+      $('inboxes').replaceChildren(...inboxes.map((inbox) => {
+        const tr = document.createElement('tr');
+        const open = document.createElement('button');
+        open.type = 'button';
+        open.className = 'secondary';
+        open.textContent = 'Open';
+        open.addEventListener('click', () => select(inbox.id));
+        const action = document.createElement('td');
+        action.append(open);
+        tr.append(harness.cell(inbox.label || '(no label)'), harness.cell(inbox.url, 'mono'), harness.cell(String(inbox.replyStatus)), harness.cell(String(inbox.deliveryCount)), action);
+        return tr;
+      }));
+    }
+
+    async function select(id) {
+      if (selected !== id) verdicts = {};
+      selected = id;
+      $('detail').hidden = false;
+      $('detail-error').hidden = true;
+      try {
+        const inbox = await harness.api(`/api/inboxes/${id}`);
+        $('detail-title').textContent = `Deliveries · ${inbox.label || inbox.url}`;
+        $('detail-reply').value = String(inbox.replyStatus);
+        $('deliveries').replaceChildren(...inbox.deliveries.map(row));
+      } catch (e) {
+        showError(e);
+      }
+    }
+
+    function row(delivery) {
+      const tr = document.createElement('tr');
+      const h = delivery.headers;
+      const verdict = verdicts[delivery.id];
+      const body = document.createElement('td');
+      const details = document.createElement('details');
+      const summary = document.createElement('summary');
+      summary.textContent = `${delivery.body.length} bytes`;
+      const pre = document.createElement('pre');
+      try { pre.textContent = JSON.stringify(JSON.parse(delivery.body), null, 2); } catch { pre.textContent = delivery.body; }
+      details.append(summary, pre);
+      body.append(details);
+      tr.append(
+        harness.cell(new Date(delivery.receivedAt).toLocaleString()),
+        harness.cell(h['x-rosteredai-event-type'] ?? '(none)', 'mono'),
+        harness.cell(`event ${h['x-rosteredai-event-id'] ?? '?'}\ndelivery ${h['x-rosteredai-delivery-id'] ?? '?'}`, 'mono'),
+        harness.cell(String(delivery.answeredWith)),
+        harness.cell(verdict ? `${verdict.valid ? 'Valid' : 'Invalid'}: ${verdict.detail}` : 'Not checked', verdict ? `outcome ${verdict.valid ? 'pass' : 'fail'}` : ''),
+        body,
+      );
+      tr.cells[2].style.whiteSpace = 'pre-line';
+      return tr;
+    }
+
+    function showError(e) {
+      $('detail-error').textContent = e.message;
+      $('detail-error').hidden = false;
+    }
+
+    $('create').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const inbox = await harness.api('/api/inboxes', { method: 'POST', body: { label: $('label').value, replyStatus: Number($('reply').value) } });
+      $('label').value = '';
+      await loadInboxes();
+      await select(inbox.id);
+    });
+    $('verify').addEventListener('click', async () => {
+      try {
+        const results = await harness.api(`/api/inboxes/${selected}/verify`, { method: 'POST', body: { secret: $('secret').value } });
+        verdicts = Object.fromEntries(results.map((r) => [r.id, r]));
+        await select(selected);
+      } catch (e) { showError(e); }
+    });
+    $('detail-reply').addEventListener('change', async () => {
+      await harness.api(`/api/inboxes/${selected}`, { method: 'PATCH', body: { replyStatus: Number($('detail-reply').value) } });
+      await loadInboxes();
+    });
+    $('refresh').addEventListener('click', () => Promise.all([loadInboxes(), select(selected)]));
+    $('clear').addEventListener('click', async () => { await harness.api(`/api/inboxes/${selected}/clear`, { method: 'POST' }); verdicts = {}; await Promise.all([loadInboxes(), select(selected)]); });
+    $('remove').addEventListener('click', async () => { await harness.api(`/api/inboxes/${selected}`, { method: 'DELETE' }); selected = undefined; $('detail').hidden = true; await loadInboxes(); });
+
+    fillReplies().then(loadInboxes);
+    // Re-rendering closes an open body, so polling waits while one is being read.
+    setInterval(() => { if (selected && !document.hidden && !document.querySelector('#deliveries details[open]')) select(selected); }, 5000);
+  </script>
+</body>
+</html>

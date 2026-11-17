@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SDK Checks</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/harness.css">
+</head>
+<body>
+  <header class="masthead">
+    <a class="brand" href="/">Rostered<span>AI</span> · Integration QA harness</a>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/explorer">SDK explorer</a>
+      <a href="/checks" aria-current="page">SDK checks</a>
+      <a href="/inbox">Webhook inbox</a>
+      <a href="/guide">Integration guide</a>
+    </nav>
+    <span class="env-pill" data-environment></span>
+  </header>
+  <main>
+    <h1>SDK checks</h1>
+    <p class="lede">Runs <code>@rosteredai/sdk</code> <span data-sdk-version></span> from this harness against <strong data-environment></strong> with your credential. The C#, Java and Python SDKs share the same behaviour and test vector.</p>
+
+    <form id="form" class="panel" autocomplete="off">
+      <div class="row">
+        <div class="field">
+          <label for="api">API</label>
+          <select id="api"><option value="tenant">Tenant (business)</option><option value="agency">Agency partner</option></select>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field"><label for="clientId">Client id</label><input type="text" id="clientId" required spellcheck="false" placeholder="rai_…"></div>
+        <div class="field"><label for="clientSecret">Client secret</label><input type="password" id="clientSecret" required autocomplete="new-password" placeholder="cs_…"></div>
+      </div>
+      <div class="field">
+        <label for="scopes">Scopes to request (optional)</label>
+        <input type="text" id="scopes" spellcheck="false" placeholder="Leave empty for every scope the credential holds, or e.g. organisation.read webhooks.read">
+        <p class="hint">The scope-refusal check needs <code>webhooks.read</code> plus <code>locations.read</code> (tenant) or <code>clients.read</code> (agency).</p>
+      </div>
+      <button type="submit" id="run">Run checks</button>
+    </form>
+
+    <div id="output" hidden>
+      <h2>Results</h2>
+      <p class="notice error" id="error" hidden></p>
+      <div class="table-wrap panel">
+        <table>
+          <thead><tr><th>Check</th><th>Outcome</th><th>Detail</th><th>Time</th></tr></thead>
+          <tbody id="results"></tbody>
+        </table>
+      </div>
+      <h2>HTTP calls the SDK made</h2>
+      <div class="table-wrap panel">
+        <table>
+          <thead><tr><th>Method</th><th>Path</th><th>Status</th><th>Time</th></tr></thead>
+          <tbody id="calls"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+  <script src="/harness.js"></script>
+  <script>harness.showEnvironment();</script>
+  <script>
+    const fill = () => {
+      const saved = harness.credential(document.getElementById('api').value);
+      document.getElementById('clientId').value = saved.clientId ?? '';
+      document.getElementById('clientSecret').value = saved.clientSecret ?? '';
+      document.getElementById('scopes').value = saved.scopes ?? '';
+    };
+    document.getElementById('api').addEventListener('change', fill);
+    fill();
+    const value = (id) => document.getElementById(id).value.trim();
+    document.getElementById('form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const button = document.getElementById('run');
+      const error = document.getElementById('error');
+      button.disabled = true;
+      button.textContent = 'Running…';
+      error.hidden = true;
+      document.getElementById('output').hidden = false;
+      document.getElementById('results').replaceChildren();
+      document.getElementById('calls').replaceChildren();
+      try {
+        const { results, calls } = await harness.api('/api/checks', {
+          method: 'POST',
+          body: { api: value('api'), clientId: value('clientId'), clientSecret: document.getElementById('clientSecret').value, scopes: value('scopes') },
+        });
+        document.getElementById('results').replaceChildren(...results.map((r) => {
+          const tr = document.createElement('tr');
+          tr.append(harness.cell(r.name), harness.cell(r.outcome, `outcome ${r.outcome}`), harness.cell(r.detail), harness.cell(`${r.ms} ms`));
+          return tr;
+        }));
+        document.getElementById('calls').replaceChildren(...calls.map((c) => {
+          const tr = document.createElement('tr');
+          tr.append(harness.cell(c.method), harness.cell(c.path, 'mono'), harness.cell(String(c.status)), harness.cell(`${c.ms} ms`));
+          return tr;
+        }));
+      } catch (e) {
+        error.textContent = e.message;
+        error.hidden = false;
+      } finally {
+        button.disabled = false;
+        button.textContent = 'Run checks';
+      }
+    });
+  </script>
+</body>
+</html>

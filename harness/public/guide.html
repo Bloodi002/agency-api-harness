@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Integration Guide</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/harness.css">
+  <style>
+    .guide { max-width: 860px; }
+    .guide h1 { font-size: 28px; }
+    .guide h2 { font-size: 21px; margin-top: 36px; padding-top: 12px; border-top: 1px solid var(--border); }
+    .guide h3 { font-size: 17px; margin-top: 24px; }
+    .guide table { margin: 12px 0; }
+    .guide blockquote { margin: 12px 0; padding: 8px 14px; border-left: 3px solid var(--brand); background: var(--surface); }
+  </style>
+</head>
+<body>
+  <header class="masthead">
+    <a class="brand" href="/">Rostered<span>AI</span> · Integration QA harness</a>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/explorer">SDK explorer</a>
+      <a href="/checks">SDK checks</a>
+      <a href="/inbox">Webhook inbox</a>
+      <a href="/guide" aria-current="page">Integration guide</a>
+    </nav>
+    <span class="env-pill" data-environment></span>
+  </header>
+  <main><article class="guide" id="guide">Loading…</article><p><a href="/guide.md" download="rosteredai-integration-guide.md">Download as Markdown</a></p></main>
+  <script src="/harness.js"></script>
+  <script>harness.showEnvironment();</script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+  <script>
+    fetch('/guide.md').then((r) => r.text()).then((markdown) => {
+      document.getElementById('guide').innerHTML = marked.parse(markdown);
+      document.querySelectorAll('#guide table').forEach((t) => t.outerHTML = `<div class="table-wrap">${t.outerHTML}</div>`);
+    });
+  </script>
+</body>
+</html>
